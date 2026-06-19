@@ -26,9 +26,9 @@
 
   <Config Name="Config Storage" Target="/config" Default="/mnt/user/appdata/epicgames-claimer" Mode="rw" Description="Persistent storage for the SQLite database (claim history and settings)." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/epicgames-claimer</Config>
 
-  <Config Name="Epic Email" Target="EPIC_EMAIL" Default="" Mode="" Description="Your Epic Games account email address." Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="Epic Email" Target="EPIC_EMAIL" Default="" Mode="" Description="Your Epic Games account email address. Can also be set via the dashboard at port 3000." Type="Variable" Display="always" Required="false" Mask="false"></Config>
 
-  <Config Name="Epic Password" Target="EPIC_PASSWORD" Default="" Mode="" Description="Your Epic Games account password." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Epic Password" Target="EPIC_PASSWORD" Default="" Mode="" Description="Your Epic Games account password. Can also be set via the dashboard at port 3000." Type="Variable" Display="always" Required="false" Mask="true"></Config>
 
   <Config Name="Notification Type" Target="NOTIFY_WEBHOOK_TYPE" Default="ntfy" Mode="" Description="Push notification service: ntfy, gotify, or pushover. Leave blank to disable notifications." Type="Variable" Display="always" Required="false" Mask="false">ntfy</Config>
 
