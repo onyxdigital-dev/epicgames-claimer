@@ -368,40 +368,54 @@ async def _claim_with_browser(access_token: str, exchange_code: str, game: dict)
                     pass
             logger.info("Browser: buttons after step 1 (30s timeout) — %s", _vis)
 
-            # Step 2: handle Epic age-gate / EULA dialog if present.
-            # NOTE: do NOT click hCaptcha's own "I accept" privacy button —
-            # that triggers the visual image challenge.  We only accept buttons
-            # that are in the Epic checkout iframe (not inside hcaptcha frames).
+            # Step 2: Epic shows a legal consent dialog in the EU/Germany:
+            #   "I accept" → you waive your 14-day right of withdrawal.
+            # This button is in the main page DOM (NOT inside an hCaptcha iframe)
+            # so Playwright can click it.  After clicking it, the Talon/hCaptcha
+            # verification fires — with stealth it should run invisibly and the
+            # order completes automatically.
             accepted = False
             for accept_sel in [
+                "button:has-text('I accept')",   # EU right-of-withdrawal dialog
                 "button:has-text('I Agree')",
                 "button:has-text('I agree')",
                 "button:has-text('Agree')",
             ]:
                 try:
                     accept_btn = page.locator(accept_sel).first
-                    if await accept_btn.is_visible(timeout=2000):
-                        logger.info("Browser: step 2 — accepting age/EULA dialog for %s", game["title"])
+                    if await accept_btn.is_visible(timeout=3000):
+                        logger.info("Browser: step 2 — clicking consent dialog '%s' for %s",
+                                    (await accept_btn.inner_text()).strip(), game["title"])
                         await accept_btn.click()
                         accepted = True
+                        # hCaptcha / Talon fires after this click.
+                        # With stealth it runs invisibly and the order completes.
+                        # Wait up to 30 s for URL hash to leave #/free-checkout.
                         try:
-                            await page.wait_for_load_state("networkidle", timeout=10000)
+                            await page.wait_for_function(
+                                "() => !window.location.href.includes('free-checkout')",
+                                timeout=30000,
+                            )
+                            logger.info("Browser: checkout complete after step 2 for %s — url=%s",
+                                        game["title"], page.url)
+                            return True
                         except PlaywrightTimeout:
                             pass
-                        await page.wait_for_timeout(2000)
                         break
                 except PlaywrightTimeout:
                     continue
 
-            # Step 3: click Add to library again if EULA was accepted
+            # Log button state after step 2 for diagnostics
             if accepted:
-                try:
-                    add_again = page.locator("button:has-text('Add to library')").first
-                    await add_again.wait_for(state="visible", timeout=5000)
-                    logger.info("Browser: step 3 — clicking Add to library after EULA for %s", game["title"])
-                    await add_again.click()
-                except PlaywrightTimeout:
-                    logger.warning("Browser: step 3 button not found for %s", game["title"])
+                _btns = await page.locator("button").all()
+                _vis = []
+                for _b in _btns:
+                    try:
+                        if await _b.is_visible(timeout=300):
+                            _vis.append(repr((await _b.inner_text()).strip()))
+                    except Exception:
+                        pass
+                logger.info("Browser: buttons after step 2 (30s) — %s", _vis)
 
             # Wait for URL hash to leave /free-checkout (primary success signal)
             try:
