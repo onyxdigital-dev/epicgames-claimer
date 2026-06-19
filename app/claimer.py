@@ -189,7 +189,7 @@ async def get_free_games(client: httpx.AsyncClient) -> list[dict]:
     return free
 
 
-async def _claim_with_browser(exchange_code: str, game: dict) -> bool:
+async def _claim_with_browser(access_token: str, exchange_code: str, game: dict) -> bool:
     """Use headless Chromium (Playwright) to click through the Epic Store checkout.
 
     A real browser is required because store.epicgames.com is behind Cloudflare.
@@ -220,8 +220,8 @@ async def _claim_with_browser(exchange_code: str, game: dict) -> bool:
             page = await ctx.new_page()
             page.on("console", lambda m: logger.debug("browser[%s] %s", m.type, m.text) if m.type == "error" else None)
 
-            # Establish a real web session via the exchange code so the purchase API
-            # accepts our requests (the launcher token alone only renders the page).
+            # Step 1: establish a real web session via the exchange code
+            # (gets XSRF-TOKEN, EPIC_SESSION_AP, Cloudflare cookies)
             login_url = (
                 f"https://www.epicgames.com/id/login/exchange"
                 f"?exchangeCode={exchange_code}"
@@ -231,6 +231,22 @@ async def _claim_with_browser(exchange_code: str, game: dict) -> bool:
             await page.goto(login_url, wait_until="networkidle", timeout=30000)
             cookies_after_login = [c["name"] for c in await ctx.cookies()]
             logger.info("Browser: web session ready — url=%s cookies=%s", page.url, cookies_after_login)
+
+            # Step 2: inject EPIC_BEARER_TOKEN — the exchange login doesn't set it
+            # but store.epicgames.com/purchase requires it to render the checkout.
+            await ctx.add_cookies([
+                {
+                    "name": "EPIC_BEARER_TOKEN",
+                    "value": access_token,
+                    "domain": ".epicgames.com",
+                    "path": "/",
+                    "httpOnly": False,
+                    "secure": True,
+                    "sameSite": "None",
+                },
+                {"name": "EPIC_SESSION_LOCALE", "value": "en-US", "domain": ".epicgames.com", "path": "/"},
+                {"name": "epicCountry", "value": "US", "domain": ".epicgames.com", "path": "/"},
+            ])
 
             logger.info("Browser: navigating to purchase page for %s", game["title"])
             nav = await page.goto(offer_url, wait_until="domcontentloaded", timeout=30000)
@@ -364,7 +380,7 @@ async def claim_game(client: httpx.AsyncClient, access_token: str, account_id: s
         logger.error("Failed to get exchange code for browser login: %s", ex_resp.text)
         return False
     exchange_code = ex_resp.json()["code"]
-    return await _claim_with_browser(exchange_code, game)
+    return await _claim_with_browser(access_token, exchange_code, game)
 
 
 async def run_claim_job():

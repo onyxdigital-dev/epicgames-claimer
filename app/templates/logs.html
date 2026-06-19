@@ -207,6 +207,9 @@
     fetch("/logs?partial=1")
       .then(r => r.json())
       .then(function(data) {
+        if (document.getElementById("hideDebug").checked) {
+          data = data.filter(function(e) { return e.level !== "DEBUG"; });
+        }
         var text = data.map(function(e) { return e.ts + "  " + e.level + "  " + e.msg; }).join("\n");
         if (navigator.clipboard && window.isSecureContext) {
           navigator.clipboard.writeText(text).then(showCopied).catch(function() { fallbackCopy(text); });
