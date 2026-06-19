@@ -11,18 +11,26 @@ from .state import state
 
 logger = logging.getLogger(__name__)
 
-EPIC_CLIENT_ID = os.environ.get("EPIC_CLIENT_ID", "34a02cf8f4414e29b15921876da36f9a")
-EPIC_CLIENT_SECRET = os.environ.get("EPIC_CLIENT_SECRET", "daafbccc737745039dffe53d94fc76cf")
-EPIC_AUTH = (EPIC_CLIENT_ID, EPIC_CLIENT_SECRET)
+# fortniteIOSGameClient — used for auth code + device_auth (has CREATE permission)
+IOS_CLIENT_ID = "3446cd72694c4a4485d81b77adbb2141"
+IOS_CLIENT_SECRET = "9209d4a5e25a457fb9b07489d313b41a"
+IOS_AUTH = (IOS_CLIENT_ID, IOS_CLIENT_SECRET)
+
+# launcherAppClient2 — used for claiming free games (has freePurchase permission)
+LAUNCHER_CLIENT_ID = os.environ.get("EPIC_CLIENT_ID", "34a02cf8f4414e29b15921876da36f9a")
+LAUNCHER_CLIENT_SECRET = os.environ.get("EPIC_CLIENT_SECRET", "daafbccc737745039dffe53d94fc76cf")
+LAUNCHER_AUTH = (LAUNCHER_CLIENT_ID, LAUNCHER_CLIENT_SECRET)
 
 TOKEN_URL = "https://account-public-service-prod.ol.epicgames.com/account/api/oauth/token"
+EXCHANGE_URL = "https://account-public-service-prod.ol.epicgames.com/account/api/oauth/exchange"
 DEVICE_AUTH_URL = "https://account-public-service-prod.ol.epicgames.com/account/api/public/account/{account_id}/deviceAuth"
 FREE_GAMES_URL = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
 ORDER_URL = "https://payment-website-pci.ol.epicgames.com/purchase"
 
+# The auth code URL uses the iOS client since it supports device_auth creation
 AUTH_CODE_URL = (
-    "https://www.epicgames.com/id/api/redirect"
-    f"?clientId={EPIC_CLIENT_ID}&responseType=code"
+    f"https://www.epicgames.com/id/api/redirect"
+    f"?clientId={IOS_CLIENT_ID}&responseType=code"
 )
 
 
@@ -38,12 +46,13 @@ async def _post_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> htt
 
 
 async def connect_with_auth_code(auth_code: str) -> dict:
-    """Exchange a one-time authorization code for tokens, then create device auth."""
+    """Exchange a one-time authorization code for tokens, then create device auth.
+    Uses fortniteIOSGameClient which has device_auth CREATE permission."""
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await _post_with_retry(
             client,
             TOKEN_URL,
-            auth=EPIC_AUTH,
+            auth=IOS_AUTH,
             data={"grant_type": "authorization_code", "code": auth_code},
         )
         data = resp.json()
@@ -53,7 +62,6 @@ async def connect_with_auth_code(auth_code: str) -> dict:
         access_token = data["access_token"]
         account_id = data["account_id"]
 
-        # Generate device_auth credentials for permanent future logins
         da_resp = await client.post(
             DEVICE_AUTH_URL.format(account_id=account_id),
             headers={"Authorization": f"Bearer {access_token}"},
@@ -70,7 +78,9 @@ async def connect_with_auth_code(auth_code: str) -> dict:
         return data
 
 
-async def _login_with_device_auth(client: httpx.AsyncClient) -> dict:
+async def _login_with_device_auth(client: httpx.AsyncClient) -> str:
+    """Log in via device_auth (iOS client) then exchange for a launcher token.
+    Returns a launcher access_token with freePurchase permission."""
     account_id = await get_setting("device_account_id")
     device_id = await get_setting("device_id")
     secret = await get_setting("device_secret")
@@ -78,10 +88,11 @@ async def _login_with_device_auth(client: httpx.AsyncClient) -> dict:
     if not all([account_id, device_id, secret]):
         raise RuntimeError("No device auth credentials stored — connect your account first.")
 
+    # Step 1: device_auth login with iOS client
     resp = await _post_with_retry(
         client,
         TOKEN_URL,
-        auth=EPIC_AUTH,
+        auth=IOS_AUTH,
         data={
             "grant_type": "device_auth",
             "account_id": account_id,
@@ -92,7 +103,27 @@ async def _login_with_device_auth(client: httpx.AsyncClient) -> dict:
     data = resp.json()
     if resp.status_code != 200:
         raise RuntimeError(data.get("errorMessage") or data.get("error_description") or resp.text)
-    return data
+
+    ios_token = data["access_token"]
+
+    # Step 2: get an exchange code from the iOS session
+    ex_resp = await client.get(EXCHANGE_URL, headers={"Authorization": f"Bearer {ios_token}"})
+    if ex_resp.status_code != 200:
+        raise RuntimeError(f"Failed to get exchange code: {ex_resp.text}")
+    exchange_code = ex_resp.json()["code"]
+
+    # Step 3: exchange for a launcher token (has freePurchase permission)
+    launcher_resp = await _post_with_retry(
+        client,
+        TOKEN_URL,
+        auth=LAUNCHER_AUTH,
+        data={"grant_type": "exchange_code", "exchange_code": exchange_code},
+    )
+    launcher_data = launcher_resp.json()
+    if launcher_resp.status_code != 200:
+        raise RuntimeError(launcher_data.get("errorMessage") or launcher_data.get("error_description") or launcher_resp.text)
+
+    return launcher_data["access_token"], launcher_data["account_id"]
 
 
 async def is_connected() -> bool:
@@ -155,15 +186,12 @@ async def run_claim_job():
 
     async with httpx.AsyncClient(timeout=30) as client:
         try:
-            data = await _login_with_device_auth(client)
+            access_token, account_id = await _login_with_device_auth(client)
         except RuntimeError as e:
             logger.error("Login error: %s", e)
             state.last_run_status = "failed"
             await _notify(f"Epic Games login failed: {e}")
             return
-
-        access_token = data["access_token"]
-        account_id = data["account_id"]
 
         try:
             free_games = await get_free_games(client)
