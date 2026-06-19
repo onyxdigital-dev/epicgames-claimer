@@ -146,12 +146,29 @@
     font-size: 0.8rem;
     font-weight: 600;
   }
+
+  .claim-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    background: rgba(0,120,242,0.1);
+    border: 1px solid rgba(0,120,242,0.35);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.75rem;
+  }
+
+  .claim-alert .claim-icon { font-size: 1.75rem; flex-shrink: 0; line-height: 1; }
+  .claim-alert .claim-body { flex: 1; min-width: 0; }
+  .claim-alert .claim-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.25rem; }
+  .claim-alert .claim-games { font-size: 0.875rem; color: var(--muted); margin-bottom: 0.85rem; }
+  .claim-alert .claim-note { font-size: 0.78rem; color: var(--muted); margin-top: 0.5rem; }
 </style>
 
 <div class="header-row">
   <div>
     <h1>Dashboard</h1>
-    <p class="muted">Free Epic Games claimed automatically every Thursday</p>
+    <p class="muted">Detects free Epic Games every Thursday and sends you a claim link</p>
   </div>
   <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
     {% if connected %}
@@ -162,6 +179,20 @@
     {% endif %}
   </div>
 </div>
+
+{% if pending_checkout_url %}
+<div class="claim-alert">
+  <div class="claim-icon">&#127918;</div>
+  <div class="claim-body">
+    <div class="claim-title">Free games available to claim</div>
+    <div class="claim-games">{{ pending_game_titles | join(', ') }}</div>
+    <a href="{{ pending_checkout_url }}" target="_blank" rel="noopener" class="btn btn-primary">
+      Open Epic Checkout &#8599;
+    </a>
+    <p class="claim-note">Opens the Epic Store checkout in your browser. Click "Add to library" (and "I accept" if prompted) to claim.</p>
+  </div>
+</div>
+{% endif %}
 
 {% if not connected %}
 <div class="connect-panel">
