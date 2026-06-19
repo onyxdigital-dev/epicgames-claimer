@@ -3,15 +3,17 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from .claimer import connect_with_auth_code, is_connected, run_claim_job, AUTH_CODE_URL
 from .database import init_db, get_claimed_games, get_setting, set_setting
+from .logbuffer import get_logs, install as install_log_buffer
 from .scheduler import start_scheduler, stop_scheduler, scheduler
 from .state import state
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
+install_log_buffer()
 logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory="/app/app/templates")
@@ -116,3 +118,13 @@ async def save_settings(
 async def trigger_claim():
     asyncio.create_task(run_claim_job())
     return RedirectResponse("/", status_code=303)
+
+
+@app.get("/logs", response_class=HTMLResponse)
+async def logs_page(request: Request):
+    if request.query_params.get("partial"):
+        return JSONResponse(get_logs())
+    return templates.TemplateResponse("logs.html", {
+        "request": request,
+        "logs": get_logs(),
+    })

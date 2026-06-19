@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  .logs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .log-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .log-controls label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+    cursor: pointer;
+    margin: 0;
+  }
+
+  .log-controls input[type="checkbox"] { width: auto; cursor: pointer; }
+
+  .log-wrap {
+    background: #0a0a0f;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .log-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
+    font-size: 0.78rem;
+  }
+
+  .log-table tr { border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .log-table tr:last-child { border-bottom: none; }
+  .log-table tr:hover { background: rgba(255,255,255,0.03); }
+
+  .log-table td { padding: 0.3rem 0.75rem; vertical-align: top; white-space: pre-wrap; word-break: break-all; }
+
+  .col-ts    { color: var(--muted); width: 160px; white-space: nowrap; }
+  .col-level { width: 60px; font-weight: 600; white-space: nowrap; }
+  .col-msg   { color: #c9d1d9; }
+
+  .level-DEBUG    { color: #555e6d; }
+  .level-INFO     { color: #58a6ff; }
+  .level-WARNING  { color: var(--warning); }
+  .level-ERROR    { color: var(--error); }
+  .level-CRITICAL { color: #ff4444; }
+
+  .row-WARNING  { background: rgba(250,168,26,0.04); }
+  .row-ERROR    { background: rgba(237,66,69,0.07); }
+  .row-CRITICAL { background: rgba(255,68,68,0.1); }
+
+  .empty-logs {
+    padding: 3rem;
+    text-align: center;
+    color: var(--muted);
+    font-family: monospace;
+  }
+
+  /* hide debug rows when filter is on */
+  .hide-debug .level-DEBUG-row { display: none; }
+</style>
+
+<div class="logs-header">
+  <div>
+    <h1>Logs</h1>
+    <p class="muted">Last {{ logs | length }} entries (max 500)</p>
+  </div>
+  <div class="log-controls">
+    <label>
+      <input type="checkbox" id="autoRefresh" checked> Auto-refresh (3s)
+    </label>
+    <label>
+      <input type="checkbox" id="hideDebug"> Hide DEBUG
+    </label>
+    <button class="btn btn-ghost" onclick="scrollToBottom()">&#8595; Bottom</button>
+    <a href="/logs" class="btn btn-ghost">&#8635; Refresh</a>
+  </div>
+</div>
+
+<div class="log-wrap" id="logWrap">
+  {% if logs %}
+  <table class="log-table" id="logTable">
+    <tbody>
+      {% for entry in logs %}
+      <tr class="row-{{ entry.level }} level-{{ entry.level }}-row">
+        <td class="col-ts">{{ entry.ts }}</td>
+        <td class="col-level level-{{ entry.level }}">{{ entry.level }}</td>
+        <td class="col-msg">{{ entry.msg }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-logs">No log entries yet. Trigger a claim to see output.</div>
+  {% endif %}
+</div>
+
+<script>
+  var autoRefreshTimer = null;
+  var atBottom = true;
+
+  function scrollToBottom() {
+    window.scrollTo(0, document.body.scrollHeight);
+  }
+
+  // Track if user scrolled away from bottom
+  window.addEventListener("scroll", function() {
+    atBottom = (window.innerHeight + window.scrollY) >= document.body.offsetHeight - 50;
+  });
+
+  function startAutoRefresh() {
+    if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+    autoRefreshTimer = setInterval(function() {
+      var wasAtBottom = atBottom;
+      fetch("/logs?partial=1")
+        .then(r => r.json())
+        .then(function(data) {
+          var tbody = document.querySelector("#logTable tbody");
+          if (!tbody) {
+            location.reload();
+            return;
+          }
+          var hideDebug = document.getElementById("hideDebug").checked;
+          var html = "";
+          data.forEach(function(entry) {
+            var hide = hideDebug && entry.level === "DEBUG" ? 'style="display:none"' : '';
+            html += '<tr class="row-' + entry.level + ' level-' + entry.level + '-row" ' + hide + '>'
+              + '<td class="col-ts">' + entry.ts + '</td>'
+              + '<td class="col-level level-' + entry.level + '">' + entry.level + '</td>'
+              + '<td class="col-msg">' + escHtml(entry.msg) + '</td>'
+              + '</tr>';
+          });
+          tbody.innerHTML = html;
+          if (wasAtBottom) scrollToBottom();
+        })
+        .catch(function() {});
+    }, 3000);
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  document.getElementById("autoRefresh").addEventListener("change", function() {
+    if (this.checked) startAutoRefresh();
+    else { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+  });
+
+  document.getElementById("hideDebug").addEventListener("change", function() {
+    var hide = this.checked;
+    document.querySelectorAll(".level-DEBUG-row").forEach(function(r) {
+      r.style.display = hide ? "none" : "";
+    });
+  });
+
+  startAutoRefresh();
+  scrollToBottom();
+</script>
+
+{% endblock %}
