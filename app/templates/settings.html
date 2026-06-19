@@ -2,10 +2,7 @@
 {% block content %}
 
 <style>
-  .settings-card {
-    max-width: 540px;
-  }
-
+  .settings-card { max-width: 540px; }
   .section-title {
     font-size: 0.75rem;
     text-transform: uppercase;
@@ -15,9 +12,7 @@
     padding-bottom: 0.5rem;
     border-bottom: 1px solid var(--border);
   }
-
   .hint { font-size: 0.78rem; color: var(--muted); margin-top: 0.3rem; }
-
   .saved-banner {
     background: rgba(59,165,92,0.15);
     border: 1px solid rgba(59,165,92,0.4);
@@ -27,8 +22,6 @@
     font-size: 0.875rem;
     margin-bottom: 1.5rem;
   }
-
-  .divider { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
 </style>
 
 <h1 style="margin-bottom:1.75rem;">Settings</h1>
@@ -39,21 +32,6 @@
 
 <div class="card settings-card">
   <form method="post" action="/settings">
-
-    <p class="section-title">Epic Games Account</p>
-
-    <div class="form-group">
-      <label for="epic_email">Email</label>
-      <input type="email" id="epic_email" name="epic_email" value="{{ epic_email }}" placeholder="you@example.com">
-    </div>
-
-    <div class="form-group">
-      <label for="epic_password">Password</label>
-      <input type="password" id="epic_password" name="epic_password" placeholder="Leave blank to keep current password">
-      <p class="hint">Stored encrypted in the local database. Leave blank to keep the current password.</p>
-    </div>
-
-    <hr class="divider">
 
     <p class="section-title">Notifications (optional)</p>
 
@@ -79,13 +57,15 @@
 <script>
   var hints = {
     ntfy:     "Full topic URL, e.g. https://ntfy.sh/my-epic-topic",
-    gotify:   "Your Gotify server URL, e.g. https://gotify.example.com (token configured in Gotify)",
+    gotify:   "Your Gotify server URL, e.g. https://gotify.example.com",
     pushover: "Format: apptoken|userkey  —  get these from pushover.net"
   };
   function updateHint() {
     var type = document.getElementById("notify_type").value;
-    document.getElementById("notify_hint").textContent = hints[type] || "";
-    document.getElementById("notify_url").placeholder = hints[type] || "";
+    var el = document.getElementById("notify_hint");
+    var input = document.getElementById("notify_url");
+    el.textContent = hints[type] || "";
+    input.placeholder = hints[type] || "";
   }
   updateHint();
 </script>

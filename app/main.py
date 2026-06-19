@@ -1,13 +1,12 @@
 import asyncio
 import logging
-import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from .claimer import connect_with_auth_code, is_connected, run_claim_job, AUTH_CODE_URL
 from .database import init_db, get_claimed_games, get_setting, set_setting
 from .scheduler import start_scheduler, stop_scheduler, scheduler
 from .state import state
@@ -36,7 +35,7 @@ def _next_run_str() -> str:
     next_run = job.next_run_time
     if not next_run:
         return "Unknown"
-    delta = next_run - datetime.now(next_run.tzinfo)
+    delta = next_run - __import__("datetime").datetime.now(next_run.tzinfo)
     days = delta.days
     hours, rem = divmod(delta.seconds, 3600)
     minutes = rem // 60
@@ -50,25 +49,46 @@ def _next_run_str() -> str:
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     games = await get_claimed_games()
-    twofa_seconds_left = None
-    if state.waiting_for_2fa and state.twofa_deadline:
-        twofa_seconds_left = max(0, int(state.twofa_deadline - time.time()))
-
+    connected = await is_connected()
     return templates.TemplateResponse("home.html", {
         "request": request,
         "games": games,
         "next_run": _next_run_str(),
-        "waiting_for_2fa": state.waiting_for_2fa,
-        "twofa_seconds_left": twofa_seconds_left,
+        "connected": connected,
+        "auth_code_url": AUTH_CODE_URL,
         "last_run_status": state.last_run_status,
         "last_run_time": state.last_run_time,
     })
 
 
-@app.post("/submit-2fa")
-async def submit_2fa(code: str = Form(...)):
-    if state.waiting_for_2fa and state.twofa_future and not state.twofa_future.done():
-        state.twofa_future.get_loop().call_soon_threadsafe(state.twofa_future.set_result, code.strip())
+@app.post("/connect")
+async def connect(request: Request, auth_code: str = Form(...)):
+    error = None
+    try:
+        await connect_with_auth_code(auth_code.strip())
+    except RuntimeError as e:
+        error = str(e)
+
+    if error:
+        games = await get_claimed_games()
+        return templates.TemplateResponse("home.html", {
+            "request": request,
+            "games": games,
+            "next_run": _next_run_str(),
+            "connected": False,
+            "auth_code_url": AUTH_CODE_URL,
+            "last_run_status": state.last_run_status,
+            "last_run_time": state.last_run_time,
+            "connect_error": error,
+        }, status_code=400)
+
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/disconnect")
+async def disconnect():
+    for key in ("device_account_id", "device_id", "device_secret"):
+        await set_setting(key, "")
     return RedirectResponse("/", status_code=303)
 
 
@@ -76,7 +96,6 @@ async def submit_2fa(code: str = Form(...)):
 async def settings_page(request: Request):
     return templates.TemplateResponse("settings.html", {
         "request": request,
-        "epic_email": await get_setting("epic_email") or "",
         "notify_url": await get_setting("notify_url") or "",
         "notify_type": await get_setting("notify_type") or "ntfy",
         "saved": request.query_params.get("saved"),
@@ -85,15 +104,9 @@ async def settings_page(request: Request):
 
 @app.post("/settings")
 async def save_settings(
-    epic_email: str = Form(""),
-    epic_password: str = Form(""),
     notify_url: str = Form(""),
     notify_type: str = Form("ntfy"),
 ):
-    if epic_email:
-        await set_setting("epic_email", epic_email)
-    if epic_password:
-        await set_setting("epic_password", epic_password)
     await set_setting("notify_url", notify_url)
     await set_setting("notify_type", notify_type)
     return RedirectResponse("/settings?saved=1", status_code=303)
@@ -101,6 +114,5 @@ async def save_settings(
 
 @app.post("/trigger")
 async def trigger_claim():
-    from .claimer import run_claim_job
     asyncio.create_task(run_claim_job())
     return RedirectResponse("/", status_code=303)

@@ -76,45 +76,76 @@
 
   .empty-state .icon { font-size: 3rem; margin-bottom: 0.75rem; }
 
-  /* 2FA Modal */
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.75);
+  /* Connect panel */
+  .connect-panel {
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    padding: 1.75rem;
+    max-width: 580px;
+    margin-bottom: 2rem;
+  }
+
+  .connect-panel h2 { font-size: 1.1rem; margin-bottom: 0.4rem; }
+  .connect-panel .sub { color: var(--muted); font-size: 0.875rem; margin-bottom: 1.25rem; }
+
+  .steps { list-style: none; counter-reset: steps; margin-bottom: 1.25rem; }
+  .steps li {
+    counter-increment: steps;
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+  }
+  .steps li::before {
+    content: counter(steps);
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 100;
-    backdrop-filter: blur(4px);
+    flex-shrink: 0;
+    margin-top: 1px;
   }
 
-  .modal {
-    background: var(--surface);
-    border: 1px solid var(--accent);
-    border-radius: 14px;
-    padding: 2rem;
-    width: 100%;
-    max-width: 420px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  .steps a { color: var(--accent); word-break: break-all; }
+
+  .connect-input-row {
+    display: flex;
+    gap: 0.5rem;
   }
 
-  .modal h2 { font-size: 1.2rem; margin-bottom: 0.5rem; }
-  .modal .modal-sub { color: var(--muted); font-size: 0.875rem; margin-bottom: 1.5rem; }
+  .connect-input-row input { flex: 1; }
+  .connect-input-row .btn { white-space: nowrap; }
 
-  .modal .countdown {
+  .error-banner {
+    background: rgba(237,66,69,0.15);
+    border: 1px solid rgba(237,66,69,0.4);
+    color: var(--error);
+    border-radius: 8px;
+    padding: 0.65rem 1rem;
+    font-size: 0.875rem;
+    margin-top: 0.75rem;
+  }
+
+  .connected-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: rgba(59,165,92,0.15);
+    border: 1px solid rgba(59,165,92,0.3);
+    color: var(--success);
+    border-radius: 20px;
+    padding: 0.25rem 0.75rem;
     font-size: 0.8rem;
-    color: var(--warning);
-    margin-bottom: 1rem;
+    font-weight: 600;
   }
-
-  .modal input[type="text"] {
-    font-size: 1.5rem;
-    letter-spacing: 0.3em;
-    text-align: center;
-    margin-bottom: 1rem;
-  }
-
-  .modal .btn { width: 100%; justify-content: center; padding: 0.65rem; font-size: 1rem; }
 </style>
 
 <div class="header-row">
@@ -122,10 +153,38 @@
     <h1>Dashboard</h1>
     <p class="muted">Free Epic Games claimed automatically every Thursday</p>
   </div>
-  <form method="post" action="/trigger">
-    <button type="submit" class="btn btn-primary">&#9654; Claim Now</button>
+  <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+    {% if connected %}
+      <span class="connected-badge">&#10003; Account connected</span>
+      <form method="post" action="/trigger" style="margin:0;">
+        <button type="submit" class="btn btn-primary">&#9654; Claim Now</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if not connected %}
+<div class="connect-panel">
+  <h2>&#128279; Connect your Epic Games account</h2>
+  <p class="sub">One-time setup. After this, claims run fully automatically — no password stored.</p>
+  <ol class="steps">
+    <li>Log into <a href="https://www.epicgames.com" target="_blank">epicgames.com</a> in your browser (including 2FA if prompted).</li>
+    <li>While still logged in, open this URL in the same browser:<br>
+        <a href="{{ auth_code_url }}" target="_blank">{{ auth_code_url }}</a></li>
+    <li>Copy the value of <strong>authorizationCode</strong> from the JSON that appears.</li>
+    <li>Paste it below and click Connect.</li>
+  </ol>
+  <form method="post" action="/connect">
+    <div class="connect-input-row">
+      <input type="text" name="auth_code" placeholder="Paste authorization code here" autocomplete="off">
+      <button type="submit" class="btn btn-primary">Connect</button>
+    </div>
+    {% if connect_error %}
+    <div class="error-banner">&#9888; {{ connect_error }}</div>
+    {% endif %}
   </form>
 </div>
+{% endif %}
 
 <div class="stats-row">
   <div class="stat-card">
@@ -134,11 +193,11 @@
   </div>
   <div class="stat-card">
     <div class="stat-label">Next Run</div>
-    <div class="stat-value" style="font-size:1rem; padding-top:0.2rem;">{{ next_run }}</div>
+    <div class="stat-value" style="font-size:1rem;padding-top:0.2rem;">{{ next_run }}</div>
   </div>
   <div class="stat-card">
     <div class="stat-label">Last Run</div>
-    <div class="stat-value" style="font-size:0.9rem; padding-top:0.2rem;">
+    <div class="stat-value" style="font-size:0.9rem;padding-top:0.2rem;">
       {% if last_run_status == "never" %}
         <span class="muted">Never</span>
       {% elif last_run_status == "success" %}
@@ -153,7 +212,14 @@
 </div>
 
 {% if games %}
-  <h2>Claimed Games</h2>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+    <h2 style="margin:0;">Claimed Games</h2>
+    {% if connected %}
+    <form method="post" action="/disconnect">
+      <button type="submit" class="btn btn-ghost" style="font-size:0.8rem;">Disconnect account</button>
+    </form>
+    {% endif %}
+  </div>
   <div class="games-grid">
     {% for game in games %}
     <div class="game-card">
@@ -170,42 +236,19 @@
     {% endfor %}
   </div>
 {% else %}
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+    <div></div>
+    {% if connected %}
+    <form method="post" action="/disconnect">
+      <button type="submit" class="btn btn-ghost" style="font-size:0.8rem;">Disconnect account</button>
+    </form>
+    {% endif %}
+  </div>
   <div class="empty-state">
     <div class="icon">&#127918;</div>
     <p>No games claimed yet.</p>
-    <p>Hit <strong>Claim Now</strong> to grab this week's free games.</p>
+    {% if connected %}<p>Hit <strong>Claim Now</strong> to grab this week's free games.</p>{% endif %}
   </div>
-{% endif %}
-
-{% if waiting_for_2fa %}
-<div class="modal-overlay">
-  <div class="modal">
-    <h2>&#128274; 2FA Required</h2>
-    <p class="modal-sub">Epic Games sent a verification code to your email or authenticator app. Enter it below to continue.</p>
-    {% if twofa_seconds_left is not none %}
-    <div class="countdown" id="countdown">Code expires in {{ twofa_seconds_left }}s</div>
-    {% endif %}
-    <form method="post" action="/submit-2fa">
-      <input type="text" name="code" placeholder="000000" maxlength="8" autofocus autocomplete="one-time-code">
-      <button type="submit" class="btn btn-primary">Submit Code</button>
-    </form>
-  </div>
-</div>
-
-{% if twofa_seconds_left is not none %}
-<script>
-  (function() {
-    var secs = {{ twofa_seconds_left }};
-    var el = document.getElementById("countdown");
-    var iv = setInterval(function() {
-      secs--;
-      if (secs <= 0) { clearInterval(iv); el.textContent = "Code expired — reload the page."; return; }
-      el.textContent = "Code expires in " + secs + "s";
-    }, 1000);
-  })();
-</script>
-{% endif %}
-
 {% endif %}
 
 {% endblock %}
