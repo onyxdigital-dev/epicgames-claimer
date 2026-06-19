@@ -82,12 +82,13 @@
   </div>
   <div class="log-controls">
     <label>
-      <input type="checkbox" id="autoRefresh" checked> Auto-refresh (3s)
+      <input type="checkbox" id="autoRefresh"> Auto-refresh (3s)
     </label>
     <label>
       <input type="checkbox" id="hideDebug"> Hide DEBUG
     </label>
     <button class="btn btn-ghost" onclick="scrollToBottom()">&#8595; Bottom</button>
+    <button class="btn btn-ghost" id="copyBtn" onclick="copyLogs()">&#128203; Copy</button>
     <a href="/logs" class="btn btn-ghost">&#8635; Refresh</a>
   </div>
 </div>
@@ -114,15 +115,44 @@
   var autoRefreshTimer = null;
   var atBottom = true;
 
+  // --- Persist checkbox settings via localStorage ---
+  var PREFS_KEY = "epicclaimer_log_prefs";
+
+  function loadPrefs() {
+    try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch(e) { return {}; }
+  }
+
+  function savePrefs(prefs) {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch(e) {}
+  }
+
+  function applyPrefs() {
+    var prefs = loadPrefs();
+    var autoEl = document.getElementById("autoRefresh");
+    var hideEl = document.getElementById("hideDebug");
+    // default auto-refresh ON, hide-debug OFF
+    autoEl.checked = prefs.autoRefresh !== undefined ? prefs.autoRefresh : true;
+    hideEl.checked  = prefs.hideDebug  !== undefined ? prefs.hideDebug  : false;
+    applyHideDebug(hideEl.checked);
+    if (autoEl.checked) startAutoRefresh();
+  }
+
+  function applyHideDebug(hide) {
+    document.querySelectorAll(".level-DEBUG-row").forEach(function(r) {
+      r.style.display = hide ? "none" : "";
+    });
+  }
+
+  // --- Scroll helpers ---
   function scrollToBottom() {
     window.scrollTo(0, document.body.scrollHeight);
   }
 
-  // Track if user scrolled away from bottom
   window.addEventListener("scroll", function() {
     atBottom = (window.innerHeight + window.scrollY) >= document.body.offsetHeight - 50;
   });
 
+  // --- Auto-refresh ---
   function startAutoRefresh() {
     if (autoRefreshTimer) clearInterval(autoRefreshTimer);
     autoRefreshTimer = setInterval(function() {
@@ -131,10 +161,7 @@
         .then(r => r.json())
         .then(function(data) {
           var tbody = document.querySelector("#logTable tbody");
-          if (!tbody) {
-            location.reload();
-            return;
-          }
+          if (!tbody) { location.reload(); return; }
           var hideDebug = document.getElementById("hideDebug").checked;
           var html = "";
           data.forEach(function(entry) {
@@ -156,19 +183,37 @@
     return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   }
 
+  // --- Copy logs to clipboard ---
+  function copyLogs() {
+    fetch("/logs?partial=1")
+      .then(r => r.json())
+      .then(function(data) {
+        var lines = data.map(function(e) { return e.ts + "  " + e.level + "  " + e.msg; });
+        navigator.clipboard.writeText(lines.join("\n")).then(function() {
+          var btn = document.getElementById("copyBtn");
+          var orig = btn.innerHTML;
+          btn.innerHTML = "&#10003; Copied!";
+          btn.style.color = "var(--success)";
+          setTimeout(function() { btn.innerHTML = orig; btn.style.color = ""; }, 2000);
+        });
+      })
+      .catch(function() {});
+  }
+
+  // --- Checkbox event listeners ---
   document.getElementById("autoRefresh").addEventListener("change", function() {
+    savePrefs(Object.assign(loadPrefs(), { autoRefresh: this.checked }));
     if (this.checked) startAutoRefresh();
     else { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
   });
 
   document.getElementById("hideDebug").addEventListener("change", function() {
-    var hide = this.checked;
-    document.querySelectorAll(".level-DEBUG-row").forEach(function(r) {
-      r.style.display = hide ? "none" : "";
-    });
+    savePrefs(Object.assign(loadPrefs(), { hideDebug: this.checked }));
+    applyHideDebug(this.checked);
   });
 
-  startAutoRefresh();
+  // --- Init ---
+  applyPrefs();
   scrollToBottom();
 </script>
 
