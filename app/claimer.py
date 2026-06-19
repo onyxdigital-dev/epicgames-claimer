@@ -292,10 +292,11 @@ async def _claim_with_browser(access_token: str, game: dict) -> bool:
                 return False
 
             await btn.click()
-            logger.info("Browser: clicked purchase button for %s", game["title"])
+            logger.info("Browser: step 1 — clicked Add to library for %s", game["title"])
             await page.wait_for_timeout(2000)
 
-            # Step 2: if a EULA/terms dialog appeared, accept it
+            # Step 2: click "I accept" if an age/EULA dialog appeared
+            accepted = False
             for accept_sel in [
                 "button:has-text('I accept')",
                 "button:has-text('Accept')",
@@ -305,27 +306,38 @@ async def _claim_with_browser(access_token: str, game: dict) -> bool:
                 try:
                     accept_btn = page.locator(accept_sel).first
                     if await accept_btn.is_visible(timeout=2000):
-                        logger.info("Browser: accepting terms dialog for %s", game["title"])
+                        logger.info("Browser: step 2 — accepting terms dialog for %s", game["title"])
                         await accept_btn.click()
-                        await page.wait_for_timeout(3000)
+                        accepted = True
+                        await page.wait_for_timeout(2000)
                         break
                 except PlaywrightTimeout:
                     continue
 
-            # Primary success signal: URL hash changes away from /free-checkout
+            # Step 3: if EULA was accepted and Add to library reappeared, click it again
+            if accepted:
+                try:
+                    add_again = page.locator("button:has-text('Add to library')").first
+                    if await add_again.is_visible(timeout=3000):
+                        logger.info("Browser: step 3 — clicking Add to library again after EULA for %s", game["title"])
+                        await add_again.click()
+                        await page.wait_for_timeout(2000)
+                except PlaywrightTimeout:
+                    pass
+
+            # Wait for URL hash to leave /free-checkout (primary success signal)
             try:
                 await page.wait_for_function(
                     "() => !window.location.href.includes('free-checkout')",
                     timeout=20000,
                 )
-                logger.info("Browser: checkout navigation complete for %s — url=%s", game["title"], page.url)
+                logger.info("Browser: checkout complete for %s — url=%s", game["title"], page.url)
                 return True
             except PlaywrightTimeout:
                 pass
 
-            # Fallback: inspect visible body text
             body_text = (await page.locator("body").inner_text()).lower()
-            logger.info("Browser: post-accept body text (500 chars): %s", body_text[:500])
+            logger.info("Browser: final body text for %s: %s", game["title"], body_text[:500])
 
             if "added to your library" in body_text or "added to library" in body_text:
                 logger.info("Browser: confirmed added to library for %s", game["title"])
