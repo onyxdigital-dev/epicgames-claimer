@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import subprocess
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Form, Request
@@ -18,13 +20,38 @@ logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory="/app/app/templates")
 
+_xvfb_proc: subprocess.Popen | None = None
+
+
+def _start_xvfb() -> None:
+    global _xvfb_proc
+    try:
+        _xvfb_proc = subprocess.Popen(
+            ["Xvfb", ":99", "-screen", "0", "1280x720x24", "-ac"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        os.environ["DISPLAY"] = ":99"
+        logger.info("Xvfb started on :99 (pid=%d)", _xvfb_proc.pid)
+    except FileNotFoundError:
+        logger.warning("Xvfb not found — headed browser claiming disabled, falling back to notifications")
+    except Exception as e:
+        logger.warning("Failed to start Xvfb: %s — falling back to notifications", e)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    _start_xvfb()
+    await asyncio.sleep(1)          # give Xvfb a moment to open the socket
+    if _xvfb_proc and _xvfb_proc.poll() is not None:
+        err = (_xvfb_proc.stderr.read() or b"").decode().strip()
+        logger.warning("Xvfb exited immediately (rc=%d): %s", _xvfb_proc.returncode, err)
     start_scheduler()
     yield
     stop_scheduler()
+    if _xvfb_proc and _xvfb_proc.poll() is None:
+        _xvfb_proc.terminate()
 
 
 app = FastAPI(lifespan=lifespan)
