@@ -22,3 +22,8 @@ services:
       # Timezone for the scheduler (default: America/New_York)
       # Games drop Thursday 11 AM ET — adjust if you want a different local time display
       - TZ=America/New_York
+
+      # Epic OAuth client credentials — only change if you get "invalid client credentials"
+      # Find current values at: https://github.com/Tectors/EpicGamesAPIDocs
+      # - EPIC_CLIENT_ID=34a02cf8f4414e29b15921876da36f9
+      # - EPIC_CLIENT_SECRET=daafbccc737745039dffe53d94fc76cf

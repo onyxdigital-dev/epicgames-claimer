@@ -11,12 +11,12 @@ from .state import state
 
 logger = logging.getLogger(__name__)
 
-# Epic Games OAuth client credentials — these are the public launcher credentials
-# embedded in the Epic Games Launcher application (reverse-engineered, not secret).
-# If login returns "invalid client credentials", Epic has rotated these.
-# Current working values sourced from the Epic launcher:
-EPIC_CLIENT_ID = "875a3b57d3a640a6b7f9b4e883463ab4"
-EPIC_CLIENT_SECRET = "1e5a25b4f5674bd2beaa9fc0fa8a62a7"
+# Epic Games OAuth client credentials — public launcher credentials embedded in
+# the Epic Games Launcher app. Configurable via env vars in case Epic rotates them.
+# Find current values at: https://github.com/Tectors/EpicGamesAPIDocs
+import os as _os
+EPIC_CLIENT_ID = _os.environ.get("EPIC_CLIENT_ID", "34a02cf8f4414e29b15921876da36f9")
+EPIC_CLIENT_SECRET = _os.environ.get("EPIC_CLIENT_SECRET", "daafbccc737745039dffe53d94fc76cf")
 EPIC_AUTH = (EPIC_CLIENT_ID, EPIC_CLIENT_SECRET)
 
 LOGIN_URL = "https://account-public-service-prod.ol.epicgames.com/account/api/oauth/token"
