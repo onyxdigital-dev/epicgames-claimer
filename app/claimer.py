@@ -103,7 +103,7 @@ async def is_connected() -> bool:
 
 
 async def get_free_games(client: httpx.AsyncClient) -> list[dict]:
-    resp = await client.get(FREE_GAMES_URL, params={"locale": "en-US", "country": "US"})
+    resp = await client.get(FREE_GAMES_URL, params={"locale": "en-US", "country": "DE"})
     resp.raise_for_status()
     elements = resp.json()["data"]["Catalog"]["searchStore"]["elements"]
     logger.info("Free games API returned %d elements", len(elements))
