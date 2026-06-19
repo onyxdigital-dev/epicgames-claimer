@@ -1,0 +1,19 @@
+# Runtime data — never commit real credentials or the database
+config/
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+dist/
+*.egg-info/
+
+# Docker
+.env
+
+# OS
+.DS_Store
+Thumbs.db

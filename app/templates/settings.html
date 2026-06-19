@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  .settings-card {
+    max-width: 540px;
+  }
+
+  .section-title {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .hint { font-size: 0.78rem; color: var(--muted); margin-top: 0.3rem; }
+
+  .saved-banner {
+    background: rgba(59,165,92,0.15);
+    border: 1px solid rgba(59,165,92,0.4);
+    color: var(--success);
+    border-radius: 8px;
+    padding: 0.65rem 1rem;
+    font-size: 0.875rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+</style>
+
+<h1 style="margin-bottom:1.75rem;">Settings</h1>
+
+{% if saved %}
+<div class="saved-banner">&#10003; Settings saved successfully.</div>
+{% endif %}
+
+<div class="card settings-card">
+  <form method="post" action="/settings">
+
+    <p class="section-title">Epic Games Account</p>
+
+    <div class="form-group">
+      <label for="epic_email">Email</label>
+      <input type="email" id="epic_email" name="epic_email" value="{{ epic_email }}" placeholder="you@example.com">
+    </div>
+
+    <div class="form-group">
+      <label for="epic_password">Password</label>
+      <input type="password" id="epic_password" name="epic_password" placeholder="Leave blank to keep current password">
+      <p class="hint">Stored encrypted in the local database. Leave blank to keep the current password.</p>
+    </div>
+
+    <hr class="divider">
+
+    <p class="section-title">Notifications (optional)</p>
+
+    <div class="form-group">
+      <label for="notify_type">Service</label>
+      <select id="notify_type" name="notify_type" onchange="updateHint()">
+        <option value="ntfy"     {% if notify_type == "ntfy"     %}selected{% endif %}>ntfy</option>
+        <option value="gotify"   {% if notify_type == "gotify"   %}selected{% endif %}>Gotify</option>
+        <option value="pushover" {% if notify_type == "pushover" %}selected{% endif %}>Pushover</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="notify_url">Webhook URL / Token</label>
+      <input type="url" id="notify_url" name="notify_url" value="{{ notify_url }}" placeholder="">
+      <p class="hint" id="notify_hint"></p>
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="margin-top:0.5rem;">Save Settings</button>
+  </form>
+</div>
+
+<script>
+  var hints = {
+    ntfy:     "Full topic URL, e.g. https://ntfy.sh/my-epic-topic",
+    gotify:   "Your Gotify server URL, e.g. https://gotify.example.com (token configured in Gotify)",
+    pushover: "Format: apptoken|userkey  —  get these from pushover.net"
+  };
+  function updateHint() {
+    var type = document.getElementById("notify_type").value;
+    document.getElementById("notify_hint").textContent = hints[type] || "";
+    document.getElementById("notify_url").placeholder = hints[type] || "";
+  }
+  updateHint();
+</script>
+
+{% endblock %}

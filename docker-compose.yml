@@ -1,0 +1,24 @@
+services:
+  epicgames-claimer:
+    build: .
+    # Or use a pre-built image:
+    # image: yourdockerhubuser/epicgames-claimer:latest
+    container_name: epicgames-claimer
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./config:/config
+    environment:
+      # Required: your Epic Games login credentials
+      - EPIC_EMAIL=your@email.com
+      - EPIC_PASSWORD=yourpassword
+
+      # Optional: push notification when 2FA is needed or a claim completes
+      # Supported types: ntfy | gotify | pushover
+      - NOTIFY_WEBHOOK_TYPE=ntfy
+      - NOTIFY_WEBHOOK_URL=https://ntfy.sh/my-epic-topic
+
+      # Timezone for the scheduler (default: America/New_York)
+      # Games drop Thursday 11 AM ET — adjust if you want a different local time display
+      - TZ=America/New_York

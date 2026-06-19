@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>epicgames-claimer</Name>
+  <Repository>yourdockerhubuser/epicgames-claimer:latest</Repository>
+  <Registry>https://hub.docker.com/r/yourdockerhubuser/epicgames-claimer</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support/>
+  <Project/>
+  <Overview>Automatically claims free Epic Games games every Thursday. Provides a web dashboard to view claim history and submit 2FA codes when prompted.</Overview>
+  <Category>Tools:</Category>
+  <WebUI>http://[IP]:[PORT:3000]/</WebUI>
+  <TemplateURL/>
+  <Icon>https://upload.wikimedia.org/wikipedia/commons/3/31/Epic_Games_logo.svg</Icon>
+  <ExtraParams>--restart=unless-stopped</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+
+  <Config Name="Web UI Port" Target="3000" Default="3000" Mode="tcp" Description="Port for the Epic Claimer dashboard." Type="Port" Display="always" Required="true" Mask="false">3000</Config>
+
+  <Config Name="Config Storage" Target="/config" Default="/mnt/user/appdata/epicgames-claimer" Mode="rw" Description="Persistent storage for the SQLite database (claim history and settings)." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/epicgames-claimer</Config>
+
+  <Config Name="Epic Email" Target="EPIC_EMAIL" Default="" Mode="" Description="Your Epic Games account email address." Type="Variable" Display="always" Required="true" Mask="false"></Config>
+
+  <Config Name="Epic Password" Target="EPIC_PASSWORD" Default="" Mode="" Description="Your Epic Games account password." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+
+  <Config Name="Notification Type" Target="NOTIFY_WEBHOOK_TYPE" Default="ntfy" Mode="" Description="Push notification service: ntfy, gotify, or pushover. Leave blank to disable notifications." Type="Variable" Display="always" Required="false" Mask="false">ntfy</Config>
+
+  <Config Name="Notification URL / Token" Target="NOTIFY_WEBHOOK_URL" Default="" Mode="" Description="For ntfy: full topic URL. For gotify: server URL. For pushover: apptoken|userkey" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+
+  <Config Name="Timezone" Target="TZ" Default="America/New_York" Mode="" Description="Timezone for the scheduler. Epic games drop Thursday 11 AM ET." Type="Variable" Display="advanced" Required="false" Mask="false">America/New_York</Config>
+</Container>
