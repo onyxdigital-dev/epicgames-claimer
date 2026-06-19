@@ -294,24 +294,58 @@ async def _claim_with_browser(access_token: str, game: dict) -> bool:
             await btn.click()
             logger.info("Browser: clicked purchase button for %s", game["title"])
 
-            # Wait for the order confirmation UI
+            # Wait for the page to react to the click (button disappears or URL changes)
+            try:
+                await page.wait_for_function(
+                    "() => !document.body.innerText.toLowerCase().includes('add to library')",
+                    timeout=10000,
+                )
+            except PlaywrightTimeout:
+                pass
+
+            await page.wait_for_timeout(2000)
+
+            # Log buttons and URL after click to see the resulting state
+            try:
+                post_buttons = await page.locator("button").all()
+                post_visible = []
+                for b in post_buttons:
+                    try:
+                        if await b.is_visible(timeout=300):
+                            post_visible.append(repr((await b.inner_text()).strip()))
+                    except Exception:
+                        pass
+                logger.info("Browser: post-click url=%s buttons=%s", page.url, post_visible)
+            except Exception as e:
+                logger.debug("Browser: post-click enumeration error: %s", e)
+
+            # Check if already confirmed via URL or page text
+            html = await page.content()
+            low = html.lower()
+
+            success_phrases = ["thank you", "your order", "order confirmed", "added to library", "successfully added"]
+            already_phrases = ["already own", "already_purchased", "already in your library"]
+
+            if any(p in low for p in success_phrases):
+                logger.info("Browser: order confirmed for %s", game["title"])
+                return True
+            if any(p in low for p in already_phrases):
+                logger.info("Browser: %s is already owned", game["title"])
+                return False
+
+            # Wait a bit longer for confirmation UI
             try:
                 await page.wait_for_selector(
                     ":text('Thank you'), :text('Your order'), :text('Order confirmed'), "
-                    ":text('Added to library'), :text('Success'), "
-                    "[data-component='OrderConfirmation'], .order-complete",
-                    timeout=15000,
+                    ":text('Added to library'), :text('Successfully added'), :text('Success')",
+                    timeout=10000,
                 )
                 logger.info("Browser: order confirmed for %s", game["title"])
                 return True
             except PlaywrightTimeout:
                 html = await page.content()
-                low = html.lower()
-                if ("already" in low and "own" in low) or "already_purchased" in low or "in library" in low:
-                    logger.info("Browser: %s is already owned", game["title"])
-                    return False
                 logger.warning(
-                    "Browser: confirmation not detected for %s (url=%s). Page HTML start: %s",
+                    "Browser: confirmation not detected for %s (url=%s). Post-click HTML start: %s",
                     game["title"], page.url, html[:3000],
                 )
                 return False
