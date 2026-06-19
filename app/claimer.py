@@ -220,16 +220,28 @@ async def _claim_with_browser(access_token: str, exchange_code: str, game: dict)
             page = await ctx.new_page()
             page.on("console", lambda m: logger.debug("browser[%s] %s", m.type, m.text) if m.type == "error" else None)
 
-            # Log purchase/payment API responses to see exactly why the order fails
+            # Log all outgoing requests to the payment backend (captures POST bodies)
+            def _log_req(request):
+                if "payment-website-pci.ol.epicgames.com" in request.url:
+                    body = request.post_data or ""
+                    logger.info("REQ %s %s body=%s", request.method, request.url, body[:300])
+            page.on("request", _log_req)
+
+            # Log all non-static API responses (skip JS/CSS/font/image assets)
             async def _log_api(response):
                 url = response.url
-                if any(k in url.lower() for k in ("purchase", "payment", "order", "entitlement", "checkout")):
-                    try:
-                        body = await response.text()
-                        logger.info("API %s %s → %d: %s",
-                                    response.request.method, url, response.status, body[:400])
-                    except Exception:
-                        logger.info("API %s → %d", url, response.status)
+                if "static-assets-prod" in url:
+                    return
+                if any(url.lower().endswith(e) for e in (".js", ".css", ".woff2", ".woff", ".ico", ".png")):
+                    return
+                if "tracking.epicgames.com" in url:
+                    return
+                try:
+                    body = await response.text()
+                    logger.info("API %s %s → %d: %s",
+                                response.request.method, url, response.status, body[:400])
+                except Exception:
+                    logger.info("API %s → %d", url, response.status)
             page.on("response", _log_api)
 
             # Step 1: exchange-code login to www (gets XSRF-TOKEN + EPIC_SESSION_AP)
@@ -336,21 +348,56 @@ async def _claim_with_browser(access_token: str, exchange_code: str, game: dict)
                         logger.info("Browser: step 2 — accepting terms dialog for %s", game["title"])
                         await accept_btn.click()
                         accepted = True
-                        await page.wait_for_timeout(2000)
+                        # After EULA accept the React app re-calls /initialize and
+                        # /order-preview before the button becomes interactive.
+                        # Wait for that round-trip before touching anything.
+                        try:
+                            await page.wait_for_load_state("networkidle", timeout=15000)
+                        except PlaywrightTimeout:
+                            pass
+                        await page.wait_for_timeout(3000)
+
+                        # Log button state after EULA to see what's available
+                        _btns = await page.locator("button").all()
+                        _vis = []
+                        for _b in _btns:
+                            try:
+                                if await _b.is_visible(timeout=300):
+                                    _vis.append(repr((await _b.inner_text()).strip()))
+                            except Exception:
+                                pass
+                        logger.info("Browser: buttons after EULA accept — %s", _vis)
                         break
                 except PlaywrightTimeout:
                     continue
 
-            # Step 3: if EULA was accepted and Add to library reappeared, click it again
+            # Step 3: click Add to library again after EULA
             if accepted:
                 try:
                     add_again = page.locator("button:has-text('Add to library')").first
-                    if await add_again.is_visible(timeout=3000):
-                        logger.info("Browser: step 3 — clicking Add to library again after EULA for %s", game["title"])
-                        await add_again.click()
-                        await page.wait_for_timeout(2000)
+                    await add_again.wait_for(state="visible", timeout=10000)
+                    await add_again.scroll_into_view_if_needed()
+                    logger.info("Browser: step 3 — clicking Add to library again after EULA for %s", game["title"])
+                    await add_again.click()
+                    # Wait for the place-order API call to complete
+                    try:
+                        await page.wait_for_load_state("networkidle", timeout=15000)
+                    except PlaywrightTimeout:
+                        pass
+                    await page.wait_for_timeout(3000)
+
+                    # Log button state after step 3 to see what changed
+                    _btns = await page.locator("button").all()
+                    _vis = []
+                    for _b in _btns:
+                        try:
+                            if await _b.is_visible(timeout=300):
+                                _vis.append(repr((await _b.inner_text()).strip()))
+                        except Exception:
+                            pass
+                    logger.info("Browser: buttons after step 3 click — %s", _vis)
                 except PlaywrightTimeout:
-                    pass
+                    logger.warning("Browser: step 3 button not found/visible for %s", game["title"])
 
             # Wait for URL hash to leave /free-checkout (primary success signal)
             try:
