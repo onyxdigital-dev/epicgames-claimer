@@ -1,8 +1,8 @@
 services:
   epicgames-claimer:
-    build: .
-    # Or use a pre-built image:
-    # image: yourdockerhubuser/epicgames-claimer:latest
+    image: ghcr.io/onyxdigital-dev/epicgames-claimer:latest
+    # To build locally instead: comment the line above and uncomment below
+    # build: .
     container_name: epicgames-claimer
     restart: unless-stopped
     ports:

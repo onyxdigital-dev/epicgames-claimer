@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>epicgames-claimer</Name>
-  <Repository>yourdockerhubuser/epicgames-claimer:latest</Repository>
-  <Registry>https://hub.docker.com/r/yourdockerhubuser/epicgames-claimer</Registry>
+  <Repository>ghcr.io/onyxdigital-dev/epicgames-claimer:latest</Repository>
+  <Registry>https://github.com/onyxdigital-dev/epicgames-claimer/pkgs/container/epicgames-claimer</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
