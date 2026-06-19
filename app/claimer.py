@@ -238,22 +238,44 @@ async def _claim_with_browser(access_token: str, game: dict) -> bool:
             nav = await page.goto(offer_url, wait_until="domcontentloaded", timeout=30000)
             logger.info("Browser: page loaded — status=%s url=%s", nav.status if nav else "?", page.url)
 
-            # Give the React SPA a moment to initialise
-            await page.wait_for_timeout(4000)
+            # Wait for the React SPA to finish its API calls, then give it a moment to render
+            try:
+                await page.wait_for_load_state("networkidle", timeout=15000)
+            except PlaywrightTimeout:
+                pass
+            await page.wait_for_timeout(3000)
+
+            # Log every visible button so we can see what the page is offering
+            try:
+                all_buttons = await page.locator("button").all()
+                visible = []
+                for b in all_buttons:
+                    try:
+                        if await b.is_visible(timeout=300):
+                            visible.append(repr((await b.inner_text()).strip()))
+                    except Exception:
+                        pass
+                logger.info("Browser: visible buttons — %s", visible)
+            except Exception as e:
+                logger.debug("Browser: button enumeration error: %s", e)
 
             # Find and click the purchase/confirm button
             btn = None
             for sel in [
                 "button:has-text('Place Order')",
+                "button:has-text('Order')",
                 "button:has-text('Confirm')",
                 "button:has-text('Get')",
+                "button:has-text('Check Out')",
+                "button:has-text('Continue')",
                 "[data-testid='purchase-cta-button']",
+                "[data-testid='confirm-btn']",
                 "button[data-component='PurchaseButton']",
                 "button.btn-primary",
             ]:
                 try:
                     el = page.locator(sel).first
-                    if await el.is_visible(timeout=2000):
+                    if await el.is_visible(timeout=1000):
                         btn = el
                         logger.info("Browser: found button via selector: %s", sel)
                         break
@@ -263,8 +285,8 @@ async def _claim_with_browser(access_token: str, game: dict) -> bool:
             if not btn:
                 html = await page.content()
                 logger.warning(
-                    "Browser: no purchase button found for %s (url=%s). Page excerpt: %s",
-                    game["title"], page.url, html[1500:2500],
+                    "Browser: no purchase button found for %s (url=%s). Page HTML start: %s",
+                    game["title"], page.url, html[:3000],
                 )
                 return False
 
@@ -287,8 +309,8 @@ async def _claim_with_browser(access_token: str, game: dict) -> bool:
                     logger.info("Browser: %s is already owned", game["title"])
                     return False
                 logger.warning(
-                    "Browser: confirmation not detected for %s (url=%s). Page excerpt: %s",
-                    game["title"], page.url, html[1500:2500],
+                    "Browser: confirmation not detected for %s (url=%s). Page HTML start: %s",
+                    game["title"], page.url, html[:3000],
                 )
                 return False
         finally:
