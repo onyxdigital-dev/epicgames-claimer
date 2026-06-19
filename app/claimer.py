@@ -11,9 +11,9 @@ from .state import state
 
 logger = logging.getLogger(__name__)
 
-# fortniteIOSGameClient — used for auth code + device_auth (has CREATE permission)
-IOS_CLIENT_ID = "3446cd72694c4a4485d81b77adbb2141"
-IOS_CLIENT_SECRET = "9209d4a5e25a457fb9b07489d313b41a"
+# fortniteAndroidGameClient — used for auth code + device_auth (has CREATE permission)
+IOS_CLIENT_ID = "3f69e56c7649492c8cc29f1af08a8a12"
+IOS_CLIENT_SECRET = "b51ee9cb12234f50a69efa67ef53812e"
 IOS_AUTH = (IOS_CLIENT_ID, IOS_CLIENT_SECRET)
 
 # launcherAppClient2 — used for claiming free games (has freePurchase permission)
