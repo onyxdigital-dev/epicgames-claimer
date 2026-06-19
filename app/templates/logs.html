@@ -184,18 +184,35 @@
   }
 
   // --- Copy logs to clipboard ---
+  function showCopied() {
+    var btn = document.getElementById("copyBtn");
+    var orig = btn.innerHTML;
+    btn.innerHTML = "&#10003; Copied!";
+    btn.style.color = "var(--success)";
+    setTimeout(function() { btn.innerHTML = orig; btn.style.color = ""; }, 2000);
+  }
+
+  function fallbackCopy(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;left:-9999px;top:0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand("copy"); showCopied(); } catch(e) {}
+    document.body.removeChild(ta);
+  }
+
   function copyLogs() {
     fetch("/logs?partial=1")
       .then(r => r.json())
       .then(function(data) {
-        var lines = data.map(function(e) { return e.ts + "  " + e.level + "  " + e.msg; });
-        navigator.clipboard.writeText(lines.join("\n")).then(function() {
-          var btn = document.getElementById("copyBtn");
-          var orig = btn.innerHTML;
-          btn.innerHTML = "&#10003; Copied!";
-          btn.style.color = "var(--success)";
-          setTimeout(function() { btn.innerHTML = orig; btn.style.color = ""; }, 2000);
-        });
+        var text = data.map(function(e) { return e.ts + "  " + e.level + "  " + e.msg; }).join("\n");
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(showCopied).catch(function() { fallbackCopy(text); });
+        } else {
+          fallbackCopy(text);
+        }
       })
       .catch(function() {});
   }
