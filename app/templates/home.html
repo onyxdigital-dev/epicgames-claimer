@@ -168,7 +168,7 @@
 <div class="header-row">
   <div>
     <h1>Dashboard</h1>
-    <p class="muted">Detects free Epic Games every Thursday and sends you a claim link</p>
+    <p class="muted">Auto-claims free Epic Games every Thursday &mdash; falls back to a manual link if captcha blocks</p>
   </div>
   <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
     {% if connected %}
@@ -184,12 +184,12 @@
 <div class="claim-alert">
   <div class="claim-icon">&#127918;</div>
   <div class="claim-body">
-    <div class="claim-title">Free games available to claim</div>
+    <div class="claim-title">Manual claim needed (auto-claim was blocked)</div>
     <div class="claim-games">{{ pending_game_titles | join(', ') }}</div>
     <a href="{{ pending_checkout_url }}" target="_blank" rel="noopener" class="btn btn-primary">
       Open Epic Checkout &#8599;
     </a>
-    <p class="claim-note">Opens the Epic Store checkout in your browser. Click "Add to library" (and "I accept" if prompted) to claim.</p>
+    <p class="claim-note">Auto-claim was blocked by hCaptcha. Click the button to open Epic&rsquo;s checkout in your real browser &mdash; click &ldquo;Add to library&rdquo; (then &ldquo;I accept&rdquo; if prompted).</p>
   </div>
 </div>
 {% endif %}
