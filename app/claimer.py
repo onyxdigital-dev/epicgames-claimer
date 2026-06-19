@@ -307,36 +307,39 @@ async def _claim_with_browser(access_token: str, game: dict) -> bool:
                     if await accept_btn.is_visible(timeout=2000):
                         logger.info("Browser: accepting terms dialog for %s", game["title"])
                         await accept_btn.click()
-                        await page.wait_for_timeout(2000)
+                        await page.wait_for_timeout(3000)
                         break
                 except PlaywrightTimeout:
                     continue
 
-            # Wait for confirmation — poll visible text every 2s for up to 20s
-            for _ in range(10):
-                await page.wait_for_timeout(2000)
-                body_text = (await page.locator("body").inner_text()).lower()
-                logger.debug("Browser: body text sample: %s", body_text[:400])
+            # Primary success signal: URL hash changes away from /free-checkout
+            try:
+                await page.wait_for_function(
+                    "() => !window.location.href.includes('free-checkout')",
+                    timeout=20000,
+                )
+                logger.info("Browser: checkout navigation complete for %s — url=%s", game["title"], page.url)
+                return True
+            except PlaywrightTimeout:
+                pass
 
-                # Real success indicators (visible text, not JS source)
-                if "added to your library" in body_text or "added to library" in body_text:
-                    logger.info("Browser: order confirmed for %s", game["title"])
-                    return True
+            # Fallback: inspect visible body text
+            body_text = (await page.locator("body").inner_text()).lower()
+            logger.info("Browser: post-accept body text (500 chars): %s", body_text[:500])
 
-                # Already owned
-                if "already own" in body_text or "already in your library" in body_text:
-                    logger.info("Browser: %s is already owned", game["title"])
-                    return False
+            if "added to your library" in body_text or "added to library" in body_text:
+                logger.info("Browser: confirmed added to library for %s", game["title"])
+                return True
+            if "already own" in body_text or "already in your library" in body_text:
+                logger.info("Browser: %s is already owned", game["title"])
+                return False
+            if "add to library" not in body_text and "i accept" not in body_text:
+                logger.info("Browser: checkout UI gone — assuming success for %s", game["title"])
+                return True
 
-                # If the Add to library / I accept buttons are gone, claim likely succeeded
-                if "add to library" not in body_text and "i accept" not in body_text:
-                    logger.info("Browser: checkout buttons gone — assuming success for %s (url=%s)", game["title"], page.url)
-                    return True
-
-            html = await page.content()
             logger.warning(
-                "Browser: confirmation not detected for %s (url=%s). Post-click HTML start: %s",
-                game["title"], page.url, html[:3000],
+                "Browser: confirmation not detected for %s (url=%s). Body text: %s",
+                game["title"], page.url, body_text[:1000],
             )
             return False
         finally:
