@@ -220,22 +220,38 @@ async def _claim_with_browser(access_token: str, exchange_code: str, game: dict)
             page = await ctx.new_page()
             page.on("console", lambda m: logger.debug("browser[%s] %s", m.type, m.text) if m.type == "error" else None)
 
-            # Step 1: establish a real web session via the exchange code
-            # (gets XSRF-TOKEN, EPIC_SESSION_AP, Cloudflare cookies)
+            # Step 1: exchange-code login → sets EPIC_SESSION_AP, XSRF-TOKEN, CF cookies
             login_url = (
                 f"https://www.epicgames.com/id/login/exchange"
                 f"?exchangeCode={exchange_code}"
-                f"&redirectUrl=https%3A%2F%2Fwww.epicgames.com%2F"
+                f"&redirectUrl=https%3A%2F%2Fstore.epicgames.com%2F"
             )
             logger.info("Browser: establishing web session for %s", game["title"])
             await page.goto(login_url, wait_until="networkidle", timeout=30000)
-            cookies_after_login = [c["name"] for c in await ctx.cookies()]
-            logger.info("Browser: web session ready — url=%s cookies=%s", page.url, cookies_after_login)
+            logger.info("Browser: after exchange login — url=%s", page.url)
 
-            # Step 2: inject EPIC_BEARER_TOKEN — the exchange login doesn't set it
-            # but store.epicgames.com/purchase requires it to render the checkout.
+            # Step 2: land on store.epicgames.com so its JS can issue a web-client
+            # EPIC_BEARER_TOKEN from EPIC_SESSION_AP (launcher token won't work for purchase).
+            if "store.epicgames.com" not in page.url:
+                await page.goto("https://store.epicgames.com/", wait_until="networkidle", timeout=30000)
+            else:
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=10000)
+                except PlaywrightTimeout:
+                    pass
+
+            cookie_map = {c["name"]: c["value"] for c in await ctx.cookies()}
+            logger.info("Browser: store session cookies — %s", list(cookie_map.keys()))
+
+            # Step 3: if store didn't set EPIC_BEARER_TOKEN, inject locale/country helpers
+            # but NOT the launcher token (it breaks the purchase API).
             await ctx.add_cookies([
-                {
+                {"name": "EPIC_SESSION_LOCALE", "value": "en-US", "domain": ".epicgames.com", "path": "/"},
+                {"name": "epicCountry", "value": "US", "domain": ".epicgames.com", "path": "/"},
+            ])
+            if "EPIC_BEARER_TOKEN" not in cookie_map:
+                logger.warning("Browser: EPIC_BEARER_TOKEN not set by store — injecting launcher token as fallback")
+                await ctx.add_cookies([{
                     "name": "EPIC_BEARER_TOKEN",
                     "value": access_token,
                     "domain": ".epicgames.com",
@@ -243,10 +259,9 @@ async def _claim_with_browser(access_token: str, exchange_code: str, game: dict)
                     "httpOnly": False,
                     "secure": True,
                     "sameSite": "None",
-                },
-                {"name": "EPIC_SESSION_LOCALE", "value": "en-US", "domain": ".epicgames.com", "path": "/"},
-                {"name": "epicCountry", "value": "US", "domain": ".epicgames.com", "path": "/"},
-            ])
+                }])
+            else:
+                logger.info("Browser: EPIC_BEARER_TOKEN set by store JS (web token) — purchase API should accept it")
 
             logger.info("Browser: navigating to purchase page for %s", game["title"])
             nav = await page.goto(offer_url, wait_until="domcontentloaded", timeout=30000)
