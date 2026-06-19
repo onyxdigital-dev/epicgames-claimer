@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import httpx
 from playwright.async_api import async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeout
+from playwright_stealth import stealth_async
 
 from .database import get_setting, set_setting, add_claimed_game
 from .notify import send_notification
@@ -218,6 +219,9 @@ async def _claim_with_browser(access_token: str, exchange_code: str, game: dict)
             )
 
             page = await ctx.new_page()
+            # Patch out headless-browser fingerprints so hCaptcha uses invisible
+            # mode (no visual challenge) rather than requiring a human to solve.
+            await stealth_async(page)
             page.on("console", lambda m: logger.debug("browser[%s] %s", m.type, m.text) if m.type == "error" else None)
 
             # Log all outgoing requests to the payment backend (captures POST bodies)
@@ -332,72 +336,72 @@ async def _claim_with_browser(access_token: str, exchange_code: str, game: dict)
 
             await btn.click()
             logger.info("Browser: step 1 — clicked Add to library for %s", game["title"])
-            await page.wait_for_timeout(2000)
 
-            # Step 2: click "I accept" if an age/EULA dialog appeared
+            # With stealth, hCaptcha should resolve invisibly and the checkout
+            # will complete automatically.  Wait up to 30 s for the URL hash to
+            # leave #/free-checkout (primary success signal) before checking for
+            # any Epic age-gate / EULA dialog.
+            url_changed = False
+            try:
+                await page.wait_for_function(
+                    "() => !window.location.href.includes('free-checkout')",
+                    timeout=30000,
+                )
+                url_changed = True
+            except PlaywrightTimeout:
+                pass
+
+            if url_changed:
+                logger.info("Browser: checkout complete after step 1 for %s — url=%s",
+                            game["title"], page.url)
+                return True
+
+            # URL still contains free-checkout — either hCaptcha is blocking or
+            # an Epic EULA dialog appeared.  Log visible buttons for diagnostics.
+            _btns = await page.locator("button").all()
+            _vis = []
+            for _b in _btns:
+                try:
+                    if await _b.is_visible(timeout=300):
+                        _vis.append(repr((await _b.inner_text()).strip()))
+                except Exception:
+                    pass
+            logger.info("Browser: buttons after step 1 (30s timeout) — %s", _vis)
+
+            # Step 2: handle Epic age-gate / EULA dialog if present.
+            # NOTE: do NOT click hCaptcha's own "I accept" privacy button —
+            # that triggers the visual image challenge.  We only accept buttons
+            # that are in the Epic checkout iframe (not inside hcaptcha frames).
             accepted = False
             for accept_sel in [
-                "button:has-text('I accept')",
-                "button:has-text('Accept')",
-                "button:has-text('Agree')",
                 "button:has-text('I Agree')",
+                "button:has-text('I agree')",
+                "button:has-text('Agree')",
             ]:
                 try:
                     accept_btn = page.locator(accept_sel).first
                     if await accept_btn.is_visible(timeout=2000):
-                        logger.info("Browser: step 2 — accepting terms dialog for %s", game["title"])
+                        logger.info("Browser: step 2 — accepting age/EULA dialog for %s", game["title"])
                         await accept_btn.click()
                         accepted = True
-                        # After EULA accept the React app re-calls /initialize and
-                        # /order-preview before the button becomes interactive.
-                        # Wait for that round-trip before touching anything.
                         try:
-                            await page.wait_for_load_state("networkidle", timeout=15000)
+                            await page.wait_for_load_state("networkidle", timeout=10000)
                         except PlaywrightTimeout:
                             pass
-                        await page.wait_for_timeout(3000)
-
-                        # Log button state after EULA to see what's available
-                        _btns = await page.locator("button").all()
-                        _vis = []
-                        for _b in _btns:
-                            try:
-                                if await _b.is_visible(timeout=300):
-                                    _vis.append(repr((await _b.inner_text()).strip()))
-                            except Exception:
-                                pass
-                        logger.info("Browser: buttons after EULA accept — %s", _vis)
+                        await page.wait_for_timeout(2000)
                         break
                 except PlaywrightTimeout:
                     continue
 
-            # Step 3: click Add to library again after EULA
+            # Step 3: click Add to library again if EULA was accepted
             if accepted:
                 try:
                     add_again = page.locator("button:has-text('Add to library')").first
-                    await add_again.wait_for(state="visible", timeout=10000)
-                    await add_again.scroll_into_view_if_needed()
-                    logger.info("Browser: step 3 — clicking Add to library again after EULA for %s", game["title"])
+                    await add_again.wait_for(state="visible", timeout=5000)
+                    logger.info("Browser: step 3 — clicking Add to library after EULA for %s", game["title"])
                     await add_again.click()
-                    # Wait for the place-order API call to complete
-                    try:
-                        await page.wait_for_load_state("networkidle", timeout=15000)
-                    except PlaywrightTimeout:
-                        pass
-                    await page.wait_for_timeout(3000)
-
-                    # Log button state after step 3 to see what changed
-                    _btns = await page.locator("button").all()
-                    _vis = []
-                    for _b in _btns:
-                        try:
-                            if await _b.is_visible(timeout=300):
-                                _vis.append(repr((await _b.inner_text()).strip()))
-                        except Exception:
-                            pass
-                    logger.info("Browser: buttons after step 3 click — %s", _vis)
                 except PlaywrightTimeout:
-                    logger.warning("Browser: step 3 button not found/visible for %s", game["title"])
+                    logger.warning("Browser: step 3 button not found for %s", game["title"])
 
             # Wait for URL hash to leave /free-checkout (primary success signal)
             try:
