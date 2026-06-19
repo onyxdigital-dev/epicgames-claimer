@@ -155,13 +155,22 @@ async def get_free_games(client: httpx.AsyncClient) -> list[dict]:
     resp = await client.get(FREE_GAMES_URL, params={"locale": "en-US", "country": "US"})
     resp.raise_for_status()
     elements = resp.json()["data"]["Catalog"]["searchStore"]["elements"]
+    logger.info("Free games API returned %d elements", len(elements))
 
     free = []
     for el in elements:
+        title = el.get("title", "Unknown")
         promotions = el.get("promotions") or {}
-        for offer_group in (promotions.get("promotionalOffers") or []):
+        offer_groups = promotions.get("promotionalOffers") or []
+
+        if not offer_groups:
+            continue
+
+        for offer_group in offer_groups:
             for offer in offer_group.get("promotionalOffers", []):
-                if offer.get("discountSetting", {}).get("discountPercentage") == 0:
+                discount = offer.get("discountSetting", {}).get("discountPercentage")
+                logger.debug("  %s — discountPercentage: %s", title, discount)
+                if discount == 0:
                     cover = next(
                         (img["url"] for img in el.get("keyImages", []) if img.get("type") == "Thumbnail"),
                         None,
@@ -169,34 +178,41 @@ async def get_free_games(client: httpx.AsyncClient) -> list[dict]:
                     free.append({
                         "id": el.get("id") or el.get("productSlug", ""),
                         "namespace": el.get("namespace", ""),
-                        "title": el.get("title", "Unknown"),
+                        "title": title,
                         "cover_url": cover,
                     })
+                    logger.info("  Found free game: %s (id=%s namespace=%s)", title, el.get("id"), el.get("namespace"))
+
+    logger.info("Found %d free game(s) to claim", len(free))
     return free
 
 
 async def claim_game(client: httpx.AsyncClient, access_token: str, account_id: str, game: dict) -> bool:
-    headers = {"Authorization": f"Bearer {access_token}"}
-    resp = await _post_with_retry(
-        client,
-        ORDER_URL,
-        headers=headers,
-        json={
-            "salesChannel": "Launcher-purchase-client",
-            "entitlementSource": "Launcher-purchase-client",
-            "returnSplitPaymentItems": False,
-            "lineOffers": [{"offerId": game["id"], "quantity": 1, "namespace": game["namespace"]}],
-            "totalAmount": 0,
-            "currency": "USD",
-        },
-    )
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+        "User-Agent": "EpicGamesLauncher/15.17.1-22983+Windows/10.0.19041.1.256.64bit",
+    }
+    payload = {
+        "salesChannel": "Launcher-purchase-client",
+        "entitlementSource": "Launcher-purchase-client",
+        "returnSplitPaymentItems": False,
+        "lineOffers": [{"offerId": game["id"], "quantity": 1, "namespace": game["namespace"]}],
+        "totalAmount": 0,
+        "currency": "USD",
+    }
+    logger.info("Claiming %s — offerId=%s namespace=%s", game["title"], game["id"], game["namespace"])
+    resp = await _post_with_retry(client, ORDER_URL, headers=headers, json=payload)
+    logger.info("Claim response %d: %s", resp.status_code, resp.text[:300])
+
     if resp.status_code in (200, 201):
         return True
     body = resp.json() if "application/json" in resp.headers.get("content-type", "") else {}
     error = body.get("errorCode", "")
     if "already_owned" in error or "already_purchased" in error:
+        logger.info("%s is already owned — skipping", game["title"])
         return False
-    logger.warning("Claim returned %d for %s: %s", resp.status_code, game["title"], resp.text)
+    logger.warning("Claim failed for %s: %s", game["title"], resp.text)
     return False
 
 

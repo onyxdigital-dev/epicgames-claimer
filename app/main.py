@@ -11,7 +11,7 @@ from .database import init_db, get_claimed_games, get_setting, set_setting
 from .scheduler import start_scheduler, stop_scheduler, scheduler
 from .state import state
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory="/app/app/templates")
