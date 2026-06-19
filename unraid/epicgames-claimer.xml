@@ -13,7 +13,7 @@
   <Category>Tools:</Category>
   <WebUI>http://[IP]:[PORT:3000]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/onyxdigital-dev/epicgames-claimer/master/unraid/epicgames-claimer.xml</TemplateURL>
-  <Icon>https://upload.wikimedia.org/wikipedia/commons/3/31/Epic_Games_logo.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/onyxdigital-dev/epicgames-claimer/master/unraid/icon.png</Icon>
   <ExtraParams>--restart=unless-stopped</ExtraParams>
   <PostArgs/>
   <CPUset/>
