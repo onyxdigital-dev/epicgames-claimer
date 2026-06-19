@@ -11,12 +11,12 @@ from .state import state
 
 logger = logging.getLogger(__name__)
 
-# fortniteAndroidGameClient — used for auth code + device_auth (has CREATE permission)
-IOS_CLIENT_ID = "3f69e56c7649492c8cc29f1af08a8a12"
-IOS_CLIENT_SECRET = "b51ee9cb12234f50a69efa67ef53812e"
-IOS_AUTH = (IOS_CLIENT_ID, IOS_CLIENT_SECRET)
+# fortniteAndroidGameClient — used for device_auth CREATE (only client still active with this permission)
+ANDROID_CLIENT_ID = "3f69e56c7649492c8cc29f1af08a8a12"
+ANDROID_CLIENT_SECRET = "b51ee9cb12234f50a69efa67ef53812e"
+ANDROID_AUTH = (ANDROID_CLIENT_ID, ANDROID_CLIENT_SECRET)
 
-# launcherAppClient2 — used for claiming free games (has freePurchase permission)
+# launcherAppClient2 — used for auth code URL (web-friendly redirect) and claiming free games
 LAUNCHER_CLIENT_ID = os.environ.get("EPIC_CLIENT_ID", "34a02cf8f4414e29b15921876da36f9a")
 LAUNCHER_CLIENT_SECRET = os.environ.get("EPIC_CLIENT_SECRET", "daafbccc737745039dffe53d94fc76cf")
 LAUNCHER_AUTH = (LAUNCHER_CLIENT_ID, LAUNCHER_CLIENT_SECRET)
@@ -27,10 +27,10 @@ DEVICE_AUTH_URL = "https://account-public-service-prod.ol.epicgames.com/account/
 FREE_GAMES_URL = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
 ORDER_URL = "https://payment-website-pci.ol.epicgames.com/purchase"
 
-# The auth code URL uses the iOS client since it supports device_auth creation
+# Use launcher client for the auth URL — its redirect is web-based, not a mobile deep link
 AUTH_CODE_URL = (
-    f"https://www.epicgames.com/id/api/redirect"
-    f"?clientId={IOS_CLIENT_ID}&responseType=code"
+    "https://www.epicgames.com/id/api/redirect"
+    f"?clientId={LAUNCHER_CLIENT_ID}&responseType=code"
 )
 
 
@@ -46,25 +46,46 @@ async def _post_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> htt
 
 
 async def connect_with_auth_code(auth_code: str) -> dict:
-    """Exchange a one-time authorization code for tokens, then create device auth.
-    Uses fortniteIOSGameClient which has device_auth CREATE permission."""
+    """One-time setup: exchange launcher auth code -> get exchange code -> get Android
+    token -> create device_auth (Android client has the CREATE permission)."""
     async with httpx.AsyncClient(timeout=30) as client:
+        # Step 1: exchange the launcher auth code for a launcher token
         resp = await _post_with_retry(
             client,
             TOKEN_URL,
-            auth=IOS_AUTH,
+            auth=LAUNCHER_AUTH,
             data={"grant_type": "authorization_code", "code": auth_code},
         )
         data = resp.json()
         if resp.status_code != 200:
             raise RuntimeError(data.get("errorMessage") or data.get("error_description") or resp.text)
 
-        access_token = data["access_token"]
-        account_id = data["account_id"]
+        launcher_token = data["access_token"]
 
+        # Step 2: get an exchange code from the launcher session
+        ex_resp = await client.get(EXCHANGE_URL, headers={"Authorization": f"Bearer {launcher_token}"})
+        if ex_resp.status_code != 200:
+            raise RuntimeError(f"Failed to get exchange code: {ex_resp.text}")
+        exchange_code = ex_resp.json()["code"]
+
+        # Step 3: exchange for an Android client token (has device_auth CREATE permission)
+        android_resp = await _post_with_retry(
+            client,
+            TOKEN_URL,
+            auth=ANDROID_AUTH,
+            data={"grant_type": "exchange_code", "exchange_code": exchange_code},
+        )
+        android_data = android_resp.json()
+        if android_resp.status_code != 200:
+            raise RuntimeError(android_data.get("errorMessage") or android_data.get("error_description") or android_resp.text)
+
+        android_token = android_data["access_token"]
+        account_id = android_data["account_id"]
+
+        # Step 4: create device_auth credentials (permanent, never expire)
         da_resp = await client.post(
             DEVICE_AUTH_URL.format(account_id=account_id),
-            headers={"Authorization": f"Bearer {access_token}"},
+            headers={"Authorization": f"Bearer {android_token}"},
         )
         if da_resp.status_code != 200:
             raise RuntimeError(f"Failed to create device auth: {da_resp.text}")
@@ -88,11 +109,11 @@ async def _login_with_device_auth(client: httpx.AsyncClient) -> str:
     if not all([account_id, device_id, secret]):
         raise RuntimeError("No device auth credentials stored — connect your account first.")
 
-    # Step 1: device_auth login with iOS client
+    # Step 1: device_auth login with Android client
     resp = await _post_with_retry(
         client,
         TOKEN_URL,
-        auth=IOS_AUTH,
+        auth=ANDROID_AUTH,
         data={
             "grant_type": "device_auth",
             "account_id": account_id,

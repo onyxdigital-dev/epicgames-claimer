@@ -171,7 +171,7 @@
     <li>Log into <a href="https://www.epicgames.com" target="_blank">epicgames.com</a> in your browser (including 2FA if prompted).</li>
     <li>While still logged in, open this URL in the same browser:<br>
         <a href="{{ auth_code_url }}" target="_blank">{{ auth_code_url }}</a></li>
-    <li>Copy the value of <strong>authorizationCode</strong> from the JSON that appears.</li>
+    <li>Find <strong>"authorizationCode"</strong> in the JSON and copy only the code value (the string between the quotes, e.g. <code>a1b2c3d4e5f6...</code>). The code expires in 5 minutes — paste it quickly.</li>
     <li>Paste it below and click Connect.</li>
   </ol>
   <form method="post" action="/connect">
