@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 from datetime import datetime, timezone
 
 import httpx
@@ -188,12 +189,54 @@ async def get_free_games(client: httpx.AsyncClient) -> list[dict]:
 
 
 async def claim_game(client: httpx.AsyncClient, access_token: str, account_id: str, game: dict) -> bool:
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-        "User-Agent": "EpicGamesLauncher/15.17.1-22983+Windows/10.0.19041.1.256.64bit",
+    """
+    Claim a free game.
+
+    The payment-website-pci endpoint is a web app that requires:
+    1. Cookie-based auth (EPIC_BEARER_TOKEN cookie = launcher access token)
+    2. A purchaseToken obtained by GETting the purchase page first
+    """
+    logger.info("Claiming %s — offerId=%s namespace=%s", game["title"], game["id"], game["namespace"])
+
+    browser_headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/125.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
     }
-    payload = {
+    # EPIC_BEARER_TOKEN cookie = same value as launcher Bearer token
+    cookies = {
+        "EPIC_BEARER_TOKEN": access_token,
+        "EPIC_LOCALE_COOKIE": "en-US",
+    }
+
+    # Step 1: GET the purchase page with cookie auth → server embeds purchaseToken in HTML
+    purchase_page_url = (
+        f"https://payment-website-pci.ol.epicgames.com/purchase"
+        f"?highlightColor=0078f2"
+        f"&offers=1-{game['namespace']}-{game['id']}"
+        f"&orderId="
+        f"&purchaseToken="
+        f"&showNavigation=true"
+    )
+    page_resp = await client.get(
+        purchase_page_url,
+        headers={**browser_headers, "Accept": "text/html,application/xhtml+xml,*/*;q=0.8"},
+        cookies=cookies,
+    )
+    logger.debug("Purchase page GET: status=%d length=%d", page_resp.status_code, len(page_resp.text))
+
+    match = re.search(r'window\.purchaseToken\s*=\s*["\']([^"\']+)["\']', page_resp.text)
+    purchase_token = match.group(1) if match else ""
+    if purchase_token:
+        logger.info("Got purchaseToken for %s", game["title"])
+    else:
+        logger.warning("purchaseToken not found in purchase page HTML — proceeding without it")
+
+    # Step 2: POST the order
+    payload: dict = {
         "salesChannel": "Launcher-purchase-client",
         "entitlementSource": "Launcher-purchase-client",
         "returnSplitPaymentItems": False,
@@ -201,18 +244,32 @@ async def claim_game(client: httpx.AsyncClient, access_token: str, account_id: s
         "totalAmount": 0,
         "currency": "USD",
     }
-    logger.info("Claiming %s — offerId=%s namespace=%s", game["title"], game["id"], game["namespace"])
-    resp = await _post_with_retry(client, ORDER_URL, headers=headers, json=payload)
-    logger.info("Claim response %d: %s", resp.status_code, resp.text[:300])
+    if purchase_token:
+        payload["purchaseToken"] = purchase_token
+
+    resp = await _post_with_retry(
+        client,
+        ORDER_URL,
+        headers={**browser_headers, "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest"},
+        cookies=cookies,
+        json=payload,
+    )
+    logger.info("Claim response %d: %s", resp.status_code, resp.text[:500])
 
     if resp.status_code in (200, 201):
         return True
-    body = resp.json() if "application/json" in resp.headers.get("content-type", "") else {}
-    error = body.get("errorCode", "")
-    if "already_owned" in error or "already_purchased" in error:
-        logger.info("%s is already owned — skipping", game["title"])
-        return False
-    logger.warning("Claim failed for %s: %s", game["title"], resp.text)
+
+    if "application/json" in resp.headers.get("content-type", ""):
+        try:
+            body = resp.json()
+            error = body.get("errorCode", "")
+            if "already_owned" in error or "already_purchased" in error:
+                logger.info("%s is already owned — skipping", game["title"])
+                return False
+        except Exception:
+            pass
+
+    logger.warning("Claim failed for %s: status=%d body=%s", game["title"], resp.status_code, resp.text[:300])
     return False
 
 
@@ -221,7 +278,7 @@ async def run_claim_job():
     state.last_run_status = "running"
     state.last_run_time = datetime.now(timezone.utc).isoformat()
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         try:
             access_token, account_id = await _login_with_device_auth(client)
         except RuntimeError as e:
