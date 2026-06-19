@@ -50,6 +50,19 @@
       <p class="hint" id="notify_hint"></p>
     </div>
 
+    <p class="section-title" style="margin-top:1.75rem;">Auto-Claiming (optional)</p>
+
+    <div class="form-group">
+      <label for="capsolver_key">CapSolver API Key</label>
+      <input type="password" id="capsolver_key" name="capsolver_key" value="{{ capsolver_key }}"
+             placeholder="CAP-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+      <p class="hint">
+        When set, hCaptcha is solved automatically (&lt;$0.002/game).
+        Get a key at <strong>capsolver.com</strong> &mdash; free trial credits included.
+        Leave blank to receive a manual checkout link instead.
+      </p>
+    </div>
+
     <button type="submit" class="btn btn-primary" style="margin-top:0.5rem;">Save Settings</button>
   </form>
 </div>
