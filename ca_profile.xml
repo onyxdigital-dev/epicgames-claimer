@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<Profiles>
+  <Profile>
+    <Author>onyxdigital-dev</Author>
+    <Name>OnyxDigital</Name>
+    <Description>Self-hosted Docker containers for Unraid. Includes epicgames-claimer — automatically claims free Epic Games every Thursday with a web dashboard and 2FA support.</Description>
+    <Support>https://github.com/onyxdigital-dev/epicgames-claimer/issues</Support>
+    <Icon>https://raw.githubusercontent.com/onyxdigital-dev/epicgames-claimer/master/unraid/icon.png</Icon>
+    <Donator>false</Donator>
+  </Profile>
+</Profiles>
