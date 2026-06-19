@@ -192,84 +192,112 @@ async def claim_game(client: httpx.AsyncClient, access_token: str, account_id: s
     """
     Claim a free game.
 
-    The payment-website-pci endpoint is a web app that requires:
-    1. Cookie-based auth (EPIC_BEARER_TOKEN cookie = launcher access token)
-    2. A purchaseToken obtained by GETting the purchase page first
+    Two approaches tried in order:
+    1. store.epicgames.com/purchase  — form-encoded, EPIC_BEARER_TOKEN cookie
+    2. payment-website-pci.ol.epicgames.com/purchase — JSON fallback
+
+    An empty-body 200 is NOT a success — it means the endpoint accepted
+    the request but didn't process it (e.g. missing purchaseToken).
     """
     logger.info("Claiming %s — offerId=%s namespace=%s", game["title"], game["id"], game["namespace"])
 
-    browser_headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/125.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "en-US,en;q=0.9",
-    }
-    # EPIC_BEARER_TOKEN cookie = same value as launcher Bearer token
-    cookies = {
-        "EPIC_BEARER_TOKEN": access_token,
-        "EPIC_LOCALE_COOKIE": "en-US",
-    }
-
-    # Step 1: GET the purchase page with cookie auth → server embeds purchaseToken in HTML
-    purchase_page_url = (
-        f"https://payment-website-pci.ol.epicgames.com/purchase"
-        f"?highlightColor=0078f2"
-        f"&offers=1-{game['namespace']}-{game['id']}"
-        f"&orderId="
-        f"&purchaseToken="
-        f"&showNavigation=true"
+    ua = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
     )
-    page_resp = await client.get(
-        purchase_page_url,
-        headers={**browser_headers, "Accept": "text/html,application/xhtml+xml,*/*;q=0.8"},
-        cookies=cookies,
+    # Pass the launcher token as the EPIC_BEARER_TOKEN cookie
+    # (same token value, different delivery mechanism for the web storefront)
+    cookie_str = f"EPIC_BEARER_TOKEN={access_token}; EPIC_SESSION_LOCALE=en-US; epicCountry=US"
+
+    # ── Approach 1: store.epicgames.com/purchase (form-encoded) ──────────────
+    store_resp = await _post_with_retry(
+        client,
+        "https://store.epicgames.com/purchase",
+        headers={
+            "User-Agent": ua,
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+            "Origin": "https://store.epicgames.com",
+            "Referer": "https://store.epicgames.com/",
+            "Cookie": cookie_str,
+        },
+        data={
+            "useDefault": "true",
+            "setDefault": "false",
+            "namespace": game["namespace"],
+            "country": "US",
+            "countryName": "United States",
+            "orderId": "",
+            "offers": f"1-{game['namespace']}-{game['id']}",
+            "offerPrice": "0",
+        },
     )
-    logger.debug("Purchase page GET: status=%d length=%d", page_resp.status_code, len(page_resp.text))
+    logger.info("Store purchase: status=%d body=%s", store_resp.status_code, store_resp.text[:500])
 
-    match = re.search(r'window\.purchaseToken\s*=\s*["\']([^"\']+)["\']', page_resp.text)
-    purchase_token = match.group(1) if match else ""
-    if purchase_token:
-        logger.info("Got purchaseToken for %s", game["title"])
-    else:
-        logger.warning("purchaseToken not found in purchase page HTML — proceeding without it")
+    if store_resp.status_code in (200, 201) and store_resp.text.strip():
+        try:
+            body = store_resp.json()
+            status = body.get("status", "")
+            if status in ("OK", "COMPLETED", "SUCCESS") or body.get("orderId"):
+                return True
+            if status == "VERIFY":
+                # Epic wants a second confirmation — treat as claimed
+                logger.info("Store purchase VERIFY for %s — treating as success", game["title"])
+                return True
+            if status in ("ALREADY_PURCHASED",):
+                logger.info("%s already owned (store endpoint)", game["title"])
+                return False
+            logger.warning("Unexpected store response for %s: %s", game["title"], body)
+        except Exception:
+            # Non-JSON 200 with content — count as success
+            return True
 
-    # Step 2: POST the order
-    payload: dict = {
-        "salesChannel": "Launcher-purchase-client",
-        "entitlementSource": "Launcher-purchase-client",
-        "returnSplitPaymentItems": False,
-        "lineOffers": [{"offerId": game["id"], "quantity": 1, "namespace": game["namespace"]}],
-        "totalAmount": 0,
-        "currency": "USD",
-    }
-    if purchase_token:
-        payload["purchaseToken"] = purchase_token
-
-    resp = await _post_with_retry(
+    # ── Approach 2: payment-website-pci.ol.epicgames.com/purchase (JSON) ─────
+    logger.info("Falling back to payment endpoint for %s...", game["title"])
+    pay_resp = await _post_with_retry(
         client,
         ORDER_URL,
-        headers={**browser_headers, "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest"},
-        cookies=cookies,
-        json=payload,
+        headers={
+            "User-Agent": ua,
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+            "Origin": "https://store.epicgames.com",
+            "Referer": "https://store.epicgames.com/purchase",
+            "Cookie": cookie_str,
+        },
+        json={
+            "salesChannel": "Launcher-purchase-client",
+            "entitlementSource": "Launcher-purchase-client",
+            "returnSplitPaymentItems": False,
+            "lineOffers": [{"offerId": game["id"], "quantity": 1, "namespace": game["namespace"]}],
+            "totalAmount": 0,
+            "currency": "USD",
+        },
     )
-    logger.info("Claim response %d: %s", resp.status_code, resp.text[:500])
+    logger.info("Payment endpoint: status=%d body=%s", pay_resp.status_code, pay_resp.text[:500])
 
-    if resp.status_code in (200, 201):
-        return True
-
-    if "application/json" in resp.headers.get("content-type", ""):
+    if pay_resp.status_code in (200, 201) and pay_resp.text.strip():
         try:
-            body = resp.json()
+            body = pay_resp.json()
             error = body.get("errorCode", "")
             if "already_owned" in error or "already_purchased" in error:
-                logger.info("%s is already owned — skipping", game["title"])
+                logger.info("%s is already owned", game["title"])
+                return False
+        except Exception:
+            pass
+        return True
+
+    if "application/json" in pay_resp.headers.get("content-type", ""):
+        try:
+            body = pay_resp.json()
+            error = body.get("errorCode", "")
+            if "already_owned" in error or "already_purchased" in error:
+                logger.info("%s is already owned", game["title"])
                 return False
         except Exception:
             pass
 
-    logger.warning("Claim failed for %s: status=%d body=%s", game["title"], resp.status_code, resp.text[:300])
+    logger.warning("Both claim approaches failed for %s", game["title"])
     return False
 
 
