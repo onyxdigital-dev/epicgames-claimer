@@ -36,7 +36,7 @@
 
   <Config Name="Timezone" Target="TZ" Default="America/New_York" Mode="" Description="Timezone for the scheduler. Epic games drop Thursday 11 AM ET." Type="Variable" Display="advanced" Required="false" Mask="false">America/New_York</Config>
 
-  <Config Name="Epic OAuth Client ID" Target="EPIC_CLIENT_ID" Default="34a02cf8f4414e29b15921876da36f9" Mode="" Description="Epic Games OAuth client ID. Only change if login fails with 'invalid client credentials'. See github.com/Tectors/EpicGamesAPIDocs for current values." Type="Variable" Display="advanced" Required="false" Mask="false">34a02cf8f4414e29b15921876da36f9</Config>
+  <Config Name="Epic OAuth Client ID" Target="EPIC_CLIENT_ID" Default="34a02cf8f4414e29b15921876da36f9a" Mode="" Description="Epic Games OAuth client ID. Only change if login fails with 'invalid client credentials'. See github.com/Tectors/EpicGamesAPIDocs for current values." Type="Variable" Display="advanced" Required="false" Mask="false">34a02cf8f4414e29b15921876da36f9a</Config>
 
   <Config Name="Epic OAuth Client Secret" Target="EPIC_CLIENT_SECRET" Default="daafbccc737745039dffe53d94fc76cf" Mode="" Description="Epic Games OAuth client secret. Only change if login fails with 'invalid client credentials'." Type="Variable" Display="advanced" Required="false" Mask="true">daafbccc737745039dffe53d94fc76cf</Config>
 </Container>

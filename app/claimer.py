@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # the Epic Games Launcher app. Configurable via env vars in case Epic rotates them.
 # Find current values at: https://github.com/Tectors/EpicGamesAPIDocs
 import os as _os
-EPIC_CLIENT_ID = _os.environ.get("EPIC_CLIENT_ID", "34a02cf8f4414e29b15921876da36f9")
+EPIC_CLIENT_ID = _os.environ.get("EPIC_CLIENT_ID", "34a02cf8f4414e29b15921876da36f9a")
 EPIC_CLIENT_SECRET = _os.environ.get("EPIC_CLIENT_SECRET", "daafbccc737745039dffe53d94fc76cf")
 EPIC_AUTH = (EPIC_CLIENT_ID, EPIC_CLIENT_SECRET)
 
