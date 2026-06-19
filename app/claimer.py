@@ -262,6 +262,7 @@ async def _claim_with_browser(access_token: str, game: dict) -> bool:
             # Find and click the purchase/confirm button
             btn = None
             for sel in [
+                "button:has-text('Add to library')",
                 "button:has-text('Place Order')",
                 "button:has-text('Order')",
                 "button:has-text('Confirm')",
@@ -297,6 +298,7 @@ async def _claim_with_browser(access_token: str, game: dict) -> bool:
             try:
                 await page.wait_for_selector(
                     ":text('Thank you'), :text('Your order'), :text('Order confirmed'), "
+                    ":text('Added to library'), :text('Success'), "
                     "[data-component='OrderConfirmation'], .order-complete",
                     timeout=15000,
                 )
@@ -305,7 +307,7 @@ async def _claim_with_browser(access_token: str, game: dict) -> bool:
             except PlaywrightTimeout:
                 html = await page.content()
                 low = html.lower()
-                if ("already" in low and "own" in low) or "already_purchased" in low:
+                if ("already" in low and "own" in low) or "already_purchased" in low or "in library" in low:
                     logger.info("Browser: %s is already owned", game["title"])
                     return False
                 logger.warning(
