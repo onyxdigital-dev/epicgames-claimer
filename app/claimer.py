@@ -201,8 +201,6 @@ async def _solve_with_capsolver(api_key: str, rq_data: str) -> str:
         "type": "HCaptchaTaskProxyless",
         "websiteURL": EPIC_PURCHASE_URL,
         "websiteKey": EPIC_HCAPTCHA_SITEKEY,
-        "userAgent": _USER_AGENT,
-        "isEnterprise": True,
         "enterprisePayload": {"rqdata": rq_data},
     }
 
