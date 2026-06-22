@@ -195,16 +195,16 @@ def _generate_checkout_url(games: list[dict]) -> str:
     )
 
 
-async def _solve_with_capsolver(api_key: str, rq_data: str | None) -> str:
+async def _solve_with_capsolver(api_key: str, rq_data: str) -> str:
     """Submit an hCaptcha task to CapSolver and wait for the token."""
     task: dict = {
         "type": "HCaptchaTaskProxyless",
         "websiteURL": EPIC_PURCHASE_URL,
         "websiteKey": EPIC_HCAPTCHA_SITEKEY,
         "userAgent": _USER_AGENT,
+        "isEnterprise": True,
+        "enterprisePayload": {"rqdata": rq_data},
     }
-    if rq_data:
-        task["enterprisePayload"] = {"rqdata": rq_data}
 
     async with httpx.AsyncClient(timeout=30) as client:
         create_resp = await client.post(
@@ -420,11 +420,21 @@ async def _claim_with_browser(
                 )
                 return False
 
-            # Wait a bit for rqdata to arrive from Talon's response handler
-            await page.wait_for_timeout(2000)
+            # Wait for rqdata from Talon's response handler (required for Epic's enterprise hCaptcha)
+            for _ in range(8):
+                if captured_rqdata["value"]:
+                    break
+                await page.wait_for_timeout(500)
             rq_data = captured_rqdata["value"]
 
-            logger.info("Browser: solving with CapSolver (rqdata=%s)...", bool(rq_data))
+            if not rq_data:
+                logger.warning(
+                    "Browser: Talon rqdata not captured for %s — cannot solve enterprise hCaptcha, falling back to notification",
+                    game["title"],
+                )
+                return False
+
+            logger.info("Browser: solving with CapSolver (rqdata=%d chars)...", len(rq_data))
             try:
                 token = await _solve_with_capsolver(capsolver_key, rq_data)
             except RuntimeError as e:
