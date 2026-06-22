@@ -101,7 +101,6 @@ async def settings_page(request: Request):
         "request": request,
         "notify_url": await get_setting("notify_url") or "",
         "notify_type": await get_setting("notify_type") or "ntfy",
-        "capsolver_key": await get_setting("capsolver_key") or "",
         "saved": request.query_params.get("saved"),
     })
 
@@ -110,11 +109,9 @@ async def settings_page(request: Request):
 async def save_settings(
     notify_url: str = Form(""),
     notify_type: str = Form("ntfy"),
-    capsolver_key: str = Form(""),
 ):
     await set_setting("notify_url", notify_url)
     await set_setting("notify_type", notify_type)
-    await set_setting("capsolver_key", capsolver_key.strip())
     return RedirectResponse("/settings?saved=1", status_code=303)
 
 
