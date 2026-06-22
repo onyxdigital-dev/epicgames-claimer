@@ -294,7 +294,11 @@ async def _claim_with_browser(
                 f"&redirectUrl=https%3A%2F%2Fwww.epicgames.com%2F"
             )
             logger.info("Browser: session login for %s", game["title"])
-            await page.goto(login_url, wait_until="networkidle", timeout=30000)
+            await page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=10000)
+            except PlaywrightTimeout:
+                pass
             cookie_names = [c["name"] for c in await ctx.cookies()]
             logger.info("Browser: cookies after login — %s", cookie_names)
 
